@@ -1,5 +1,6 @@
 ---
 description: SDD - implementa UNA tarea, tests primero (TDD)
+model: opencode/deepseek-v4.1-flash-free
 mode: subagent
 permission:
   edit:

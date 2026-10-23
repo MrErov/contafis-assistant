@@ -1,5 +1,6 @@
 ---
 description: SDD - redacta la spec, el plan y las tareas, sin tocar código
+model: nvidia/stepfun-ai/step-5-preview
 mode: subagent
 permission:
   edit:

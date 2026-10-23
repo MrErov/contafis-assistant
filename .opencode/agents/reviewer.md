@@ -1,5 +1,6 @@
 ---
 description: SDD - revisa la spec como QA y valida la implementación RF por RF
+model: opencode/deepseek-v4.1-flash-free
 mode: subagent
 permission:
   edit: deny
