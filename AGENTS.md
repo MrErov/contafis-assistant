@@ -8,7 +8,7 @@ Este repositorio contiene el Asistente Fiscal basado en IA (RAG) para el proyect
 - LangChain, LangGraph, LangSmith
 - FastAPI (para exponer el servicio)
 - Pytest (testing)
-- AWS (Bedrock/OpenSearch - a definir en fase de plan)
+- OpenAI (LLM/embeddings) + Chroma local (vector store) + BM25 (decisión Spec 001; AWS queda fuera del MVP)
 
 ## Reglas Estrictas para el Agente (IA)
 1. **NO inventar código de LangChain:** Si no conocés la API exacta de la versión actual, buscá en la documentación oficial o usá `langchain-cli`. No uses sintaxis de versiones viejas.
@@ -20,4 +20,4 @@ Este repositorio contiene el Asistente Fiscal basado en IA (RAG) para el proyect
 
 ## Entorno y Secretos
 - NUNCA commitees el archivo `.env`.
-- Las API Keys (OpenAI/AWS) deben leerse con `os.getenv()`.
+- Las API Keys (OpenAI/Odoo) deben leerse con `os.getenv()`.
