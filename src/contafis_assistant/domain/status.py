@@ -21,6 +21,8 @@ class StatusSignals(BaseModel):
     iteration_limit: bool = False
     upstream_error: bool = False
     source_failed: bool = False
+    erp_attempted: bool = False
+    rag_attempted: bool = False
     manifest_mismatch: bool = False
     corpus_unavailable: bool = False
     rag_low_score: bool = False
@@ -70,6 +72,8 @@ def reduce_status(signals: StatusSignals) -> StatusDecision:
 
     if signals.upstream_error and not signals.has_usable_data:
         warnings: list[WarningCode] = []
+        if signals.erp_attempted and signals.rag_attempted:
+            _append_unique(warnings, WarningCode.source_unavailable)
         if signals.corpus_unavailable:
             _append_unique(warnings, WarningCode.corpus_unavailable)
         if signals.manifest_mismatch:

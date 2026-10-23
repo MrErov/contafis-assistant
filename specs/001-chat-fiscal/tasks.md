@@ -391,11 +391,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_answer.py tests/integration/test_status_matrix.py tests/integration/test_grounding.py` pasa.
-- [ ] Cada fila de §8.3 tiene al menos una prueba de estado final.
-- [ ] Un test confirma que `not_found` con alcance incompleto se transforma en `partial` y no afirma inexistencia.
-- [ ] Un test inyecta un total/ID/cita falso y demuestra el fallback determinista.
-- [ ] `answer` no contiene montos ni moneda en ningún estado.
+- [x] `pytest tests/unit/test_answer.py tests/integration/test_status_matrix.py tests/integration/test_grounding.py` pasa.
+- [x] Cada fila de §8.3 tiene al menos una prueba de estado final.
+- [x] Un test confirma que `not_found` con alcance incompleto se transforma en `partial` y no afirma inexistencia.
+- [x] Un test inyecta un total/ID/cita falso y demuestra el fallback determinista.
+- [x] `answer` no contiene montos ni moneda en ningún estado.
 
 **Trazabilidad:** RF-003, RF-005, RF-007, RF-012, RF-016, RF-017, RF-040, RF-041, RF-042, RF-043, RF-044, RF-047, RF-050, RF-056, RF-060; RNF-006; AC-04 (estado final), AC-10, AC-14, AC-23 (estado), AC-30 (estado), AC-33 (estado), AC-43, AC-46, AC-55 (estado), AC-57 (estado).
 

@@ -10,6 +10,7 @@ from typing import Any
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 
+from contafis_assistant.domain.answer import AnswerComposer
 from contafis_assistant.domain.contracts import EntityRef
 from contafis_assistant.domain.enums import EntityType, Status
 from contafis_assistant.domain.time import Clock
@@ -39,6 +40,7 @@ from contafis_assistant.memory.threads import (
     ThreadTurn,
     TimeRange,
 )
+from contafis_assistant.odoo.scope import ScopeSnapshot
 
 
 class RunTracker:
@@ -56,6 +58,8 @@ class GraphDependencies:
     clock: Clock = field(default_factory=Clock)
     max_tool_calls: int = 3
     recursion_limit: int = 12
+    scope_snapshot: ScopeSnapshot | None = None
+    answer_composer: AnswerComposer | None = None
 
 
 def _as_state(value: Any) -> TurnState:
@@ -121,7 +125,13 @@ def build_graph(
             tracker,
         ),
     )
-    builder.add_node("finalize", _wrap(finalize_node, tracker))
+    builder.add_node(
+        "finalize",
+        _wrap(
+            lambda state: finalize_node(state, deps.answer_composer),
+            tracker,
+        ),
+    )
 
     builder.set_entry_point("prepare")
     builder.add_edge("prepare", "classify")
@@ -237,6 +247,7 @@ def run_turn(
         message=message,
         history=resolution.history,
         thread_warnings=resolution.warnings,
+        scope_snapshot=deps.scope_snapshot,
         remaining_budget=deps.max_tool_calls,
     )
 
@@ -263,6 +274,21 @@ def run_turn(
                 ),
             }
         )
+        final = finalize_node(final)
+    except Exception:
+        base = tracker.state or initial
+        final = finalize_node(
+            base.model_copy(
+                update={
+                    "status": Status.upstream_error,
+                    "is_final": True,
+                    "next_action": None,
+                }
+            )
+        )
+
+    if not final.answer:
+        final = finalize_node(final)
 
     if deps.store is not None:
         final = _record(final, deps.store)

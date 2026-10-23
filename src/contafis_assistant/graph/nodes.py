@@ -7,6 +7,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from contafis_assistant.domain.answer import (
+    AnswerComposer,
+    AnswerContext,
+    compose_answer,
+    render_answer,
+)
 from contafis_assistant.domain.contracts import Warning
 from contafis_assistant.domain.enums import Intent, Status, WarningCode, WarningSource
 from contafis_assistant.domain.status import StatusSignals, reduce_status
@@ -321,9 +327,17 @@ def execute_node(
 
 def _signals(state: TurnState) -> StatusSignals:
     codes = {warning.code for warning in state.warnings}
+    erp_attempted = "erp" in state.sources_attempted
+    rag_attempted = "rag" in state.sources_attempted
+    erp_failed = erp_attempted and "erp" not in state.sources_used
+    rag_failed = rag_attempted and "rag" not in state.sources_used
+    has_usable_data = bool(state.data or state.sources)
     return StatusSignals(
-        request_valid=True,
-        out_of_scope_all=state.intent is Intent.fuera_de_alcance,
+        request_valid=state.status is not Status.invalid_request,
+        out_of_scope_all=(
+            state.status is Status.out_of_scope
+            or state.intent is Intent.fuera_de_alcance
+        ),
         out_of_scope_component=WarningCode.out_of_scope_component in codes,
         needs_clarification=state.status is Status.needs_clarification,
         entity_not_found=state.status is Status.not_found,
@@ -336,46 +350,94 @@ def _signals(state: TurnState) -> StatusSignals:
             state.status is Status.iteration_limit
             or state.iteration_limit_reason is not None
         ),
-        upstream_error=state.status is Status.upstream_error,
+        upstream_error=(
+            state.status is Status.upstream_error
+            or (
+                (erp_attempted or rag_attempted)
+                and not has_usable_data
+                and erp_failed + rag_failed == (erp_attempted + rag_attempted)
+            )
+        ),
         source_failed=(
             state.retryable_source is not None
             or WarningCode.source_unavailable in codes
             or WarningCode.corpus_unavailable in codes
+            or erp_failed
+            or rag_failed
         ),
+        erp_attempted=erp_attempted,
+        rag_attempted=rag_attempted,
         manifest_mismatch=WarningCode.manifest_mismatch in codes,
         corpus_unavailable=WarningCode.corpus_unavailable in codes,
         rag_low_score=WarningCode.retrieval_low_score in codes,
         has_erp_data=("erp" in state.sources_used) or bool(state.data),
-        has_usable_data=bool(state.data or state.sources),
+        has_usable_data=has_usable_data,
         insufficient_context=state.status is Status.insufficient_context,
         zero_results_existing_entity=bool(state.entities) and bool(state.data),
     )
 
 
-def finalize_node(state: TurnState) -> TurnState:
-    decision = reduce_status(_signals(state))
-    warnings = list(state.warnings)
-    for code in decision.warnings:
-        warnings = _merge_warnings(warnings, [_warning(code)])
+def _answer_context(
+    state: TurnState,
+    status: Status,
+    warnings: list[Warning],
+) -> AnswerContext:
+    options = (
+        list(state.options)
+        if status in {Status.needs_clarification, Status.not_found}
+        else []
+    )
+    return AnswerContext(
+        status=status,
+        intent=state.intent,
+        data=list(state.data),
+        sources=list(state.sources),
+        entities=list(state.entities),
+        options=options,
+        warnings=list(warnings),
+        truncated=state.truncated,
+        message=state.message,
+    )
 
-    status = decision.status
-    if (
-        state.status is Status.partial
-        and not state.data
-        and not state.sources
-    ):
-        status = Status.partial
-        warnings = _merge_warnings(
-            warnings, [_warning(WarningCode.scope_partial)]
+
+def finalize_node(
+    state: TurnState,
+    composer: AnswerComposer | None = None,
+) -> TurnState:
+    try:
+        decision = reduce_status(_signals(state))
+        warnings = list(state.warnings)
+        for code in decision.warnings:
+            warnings = _merge_warnings(warnings, [_warning(code)])
+
+        status = decision.status
+        if state.status is Status.partial and not state.data and not state.sources:
+            status = Status.partial
+            warnings = _merge_warnings(
+                warnings, [_warning(WarningCode.scope_partial)]
+            )
+
+        answer = compose_answer(
+            _answer_context(state, status, warnings),
+            composer=composer,
+        )
+    except Exception:
+        status = Status.upstream_error
+        warnings = list(state.warnings)
+        answer = render_answer(
+            AnswerContext(
+                status=Status.upstream_error,
+                intent=state.intent,
+                message=state.message,
+            )
         )
 
     return state.model_copy(
         update={
             "status": status,
+            "answer": answer,
             "warnings": warnings,
-            "remaining_budget": max(
-                0, state.remaining_budget
-            ),
+            "remaining_budget": max(0, state.remaining_budget),
             "is_final": True,
             "next_action": None,
         }
