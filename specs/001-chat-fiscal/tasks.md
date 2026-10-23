@@ -120,10 +120,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_odoo_allowlist.py tests/unit/test_odoo_client.py tests/unit/test_scope.py` pasa.
-- [ ] Todo intento inválido se rechaza antes de construir/ejecutar el request HTTP, comprobado con `MockTransport`.
-- [ ] Los tests demuestran que no hay dos RPC en paralelo y que un reintento consume presupuesto.
-- [ ] `scope_unsafe` por admin/atestación y por no interno producen decisiones distintas, incluido `scope_admin_key` solo para el primer caso.
+- [x] `pytest tests/unit/test_odoo_allowlist.py tests/unit/test_odoo_client.py tests/unit/test_scope.py` pasa.
+- [x] Todo intento inválido se rechaza antes de construir/ejecutar el request HTTP, comprobado con `MockTransport`.
+- [x] Los tests demuestran que no hay dos RPC en paralelo y que un reintento consume presupuesto.
+- [x] `scope_unsafe` por admin/atestación y por no interno producen decisiones distintas, incluido `scope_admin_key` solo para el primer caso.
 
 **Trazabilidad:** RF-032, RF-033, RF-061, RF-062, RF-068, RF-079; RNF-012, RNF-013, RNF-016; AC-12, AC-21, AC-37, AC-52, AC-55, AC-56, AC-58, AC-59.
 
