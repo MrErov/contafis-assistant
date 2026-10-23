@@ -278,11 +278,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_manifest.py tests/unit/test_tokenizer.py tests/unit/test_retrieval.py tests/unit/test_corpus.py tests/integration/test_rag_tool.py` pasa sin Chroma remoto ni OpenAI.
-- [ ] Los tests demuestran que el umbral se aplica antes de RRF y que `Source.score` es el score fusionado.
-- [ ] Un manifiesto/BM25 inválido no lanza fail-fast y produce el estado de corpus correcto.
-- [ ] La ingesta es invocable offline y no modifica archivos durante un turno.
-- [ ] Ningún documento fuera del manifiesto puede aparecer en `Source`.
+- [x] `pytest tests/unit/test_manifest.py tests/unit/test_tokenizer.py tests/unit/test_retrieval.py tests/unit/test_corpus.py tests/integration/test_rag_tool.py` pasa sin Chroma remoto ni OpenAI.
+- [x] Los tests demuestran que el umbral se aplica antes de RRF y que `Source.score` es el score fusionado.
+- [x] Un manifiesto/BM25 inválido no lanza fail-fast y produce el estado de corpus correcto.
+- [x] La ingesta es invocable offline y no modifica archivos durante un turno.
+- [x] Ningún documento fuera del manifiesto puede aparecer en `Source`.
 
 **Trazabilidad:** RF-040, RF-041, RF-042, RF-043, RF-044, RF-045, RF-046, RF-047, RF-071, RF-072, RF-073, RF-074, RF-075; RNF-017; AC-07, AC-08, AC-33, AC-34, AC-35, AC-36, AC-41, AC-53.
 
