@@ -1,0 +1,10 @@
+langchain
+langchain-community
+langchain-openai
+langgraph
+langsmith
+python-dotenv
+fastapi
+uvicorn
+pytest
+pytest-mock
