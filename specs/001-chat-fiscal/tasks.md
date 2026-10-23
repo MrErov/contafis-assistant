@@ -222,11 +222,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_documents.py tests/unit/test_alerts.py tests/unit/test_document_state.py` pasa.
-- [ ] Los tests cubren snapshot completo, incompleto, ausente, vivos caídos y sin snapshot anterior.
-- [ ] `total` nunca se deriva de `items` y `pending_count` se recalcula en Python.
-- [ ] Los tests de zona horaria demuestran el mes correcto a las 23:30 y 00:30 de Caracas.
-- [ ] `message_clean` no contiene montos, moneda, emails, links ni teléfonos.
+- [x] `pytest tests/unit/test_documents.py tests/unit/test_alerts.py tests/unit/test_document_state.py` pasa.
+- [x] Los tests cubren snapshot completo, incompleto, ausente, vivos caídos y sin snapshot anterior.
+- [x] `total` nunca se deriva de `items` y `pending_count` se recalcula en Python.
+- [x] Los tests de zona horaria demuestran el mes correcto a las 23:30 y 00:30 de Caracas.
+- [x] `message_clean` no contiene montos, moneda, emails, links ni teléfonos.
 
 **Trazabilidad:** RF-029, RF-030, RF-031, RF-063, RF-064, RF-065, RF-069, RF-070; AC-05, AC-06, AC-23, AC-24, AC-27, AC-28, AC-32 (documentos/alertas), AC-42, AC-45, AC-47.
 

@@ -22,6 +22,36 @@ OBLIGATION_READ_FIELDS = [
 ]
 OBLIGATION_TYPE_READ_FIELDS = ["id", "name", "tax_type"]
 ALERT_READ_FIELDS = ["id", "client_id", "state"]
+ALERT_DETAIL_READ_FIELDS = [
+    "id",
+    "client_id",
+    "obligation_id",
+    "document_id",
+    "alert_type",
+    "date",
+    "state",
+    "channel",
+    "message",
+]
+DOCUMENT_READ_FIELDS = [
+    "id",
+    "client_id",
+    "document_type_id",
+    "state",
+    "expiry_date",
+]
+CARTELERA_READ_FIELDS = [
+    "id",
+    "client_id",
+    "year",
+    "month",
+    "document_type_id",
+    "document_id",
+    "state",
+    "expiry_date",
+    "date_generated",
+]
+DOCUMENT_TYPE_READ_FIELDS = ["id", "name", "code", "required_for"]
 
 WARNING_MESSAGES: dict[WarningCode, str] = {
     WarningCode.company_archived: (
@@ -39,6 +69,25 @@ WARNING_MESSAGES: dict[WarningCode, str] = {
     WarningCode.scope_partial: "El alcance de compañías es incompleto.",
     WarningCode.truncated: "El detalle se truncó al límite configurado.",
     WarningCode.count_unavailable: "No se pudo confirmar el total.",
+    WarningCode.cartelera_fallback_live_documents: (
+        "Faltan pares del snapshot del mes; se usaron documentos vivos."
+    ),
+    WarningCode.cartelera_fallback_previous_snapshot: (
+        "No se pudieron usar los documentos vivos; se usó el último snapshot anterior."
+    ),
+    WarningCode.cartelera_snapshot_incomplete: (
+        "El snapshot del mes no cubre todos los pares cliente/tipo requeridos."
+    ),
+    WarningCode.null_document_state: (
+        "El documento o snapshot no tiene estado; se trata como pendiente."
+    ),
+    WarningCode.no_expiry_date: (
+        "El documento o snapshot no tiene fecha de vencimiento; conserva su estado."
+    ),
+    WarningCode.null_alert_date: (
+        "La alerta no tiene fecha; se ordena al final."
+    ),
+    WarningCode.no_alerts_today: "No hay alertas en el rango de hoy en Caracas.",
 }
 
 

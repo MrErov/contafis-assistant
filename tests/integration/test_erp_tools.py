@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from contafis_assistant.domain.contracts import (
+    AlertsResult,
     ClientsResult,
     CompaniesResult,
+    DocumentsResult,
     EntityRef,
     ObligationsResult,
 )
 from contafis_assistant.domain.enums import EntityType, Status
+from contafis_assistant.odoo.tools.alerts import query_alerts
 from contafis_assistant.odoo.tools.clients import query_clients
 from contafis_assistant.odoo.tools.companies import query_companies
+from contafis_assistant.odoo.tools.documents import query_documents
 from contafis_assistant.odoo.tools.entities import resolve_entity
 from contafis_assistant.odoo.tools.obligations import query_obligations
 
@@ -63,7 +67,39 @@ class FakeGateway:
                 },
             ]
         if call.model == "l10n.ve.alert":
-            return [{"id": 1, "client_id": 100, "state": "pending"}]
+            return [
+                {
+                    "id": 1,
+                    "client_id": 100,
+                    "obligation_id": 1,
+                    "document_id": None,
+                    "alert_type": "due_soon",
+                    "date": datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc),
+                    "state": "pending",
+                    "channel": "email",
+                    "message": "Monto: 123,45 USD https://wa.me/584141234567",
+                }
+            ]
+        if call.model == "l10n.ve.document.type":
+            return [
+                {"id": 1, "name": "RIF", "code": "C01", "required_for": "company"}
+            ]
+        if call.model == "l10n.ve.cartelera.status":
+            return [
+                {
+                    "id": 1,
+                    "client_id": 100,
+                    "year": TODAY.year,
+                    "month": str(TODAY.month),
+                    "document_type_id": 1,
+                    "document_id": 9,
+                    "state": "valid",
+                    "expiry_date": TOMORROW,
+                    "date_generated": datetime(2026, 1, 10, 12),
+                }
+            ]
+        if call.model == "l10n.ve.document":
+            return []
         raise AssertionError(f"modelo inesperado: {call.model}")
 
 
@@ -139,6 +175,43 @@ def test_companies_tool_returns_valid_tool_result():
     assert result.items[0].clients_total == 1
     assert result.items[0].obligations_total == 2
     assert result.breakdown[0].company_id == 1
+
+
+def test_documents_tool_returns_valid_tool_result():
+    gateway = FakeGateway()
+
+    result = query_documents(
+        gateway,
+        today=TODAY,
+        allowed_company_ids=[1],
+    )
+
+    assert isinstance(result, DocumentsResult)
+    assert result.kind == "documents"
+    assert_valid_contract(result)
+    assert result.total == 1
+    assert result.pending_count == 0
+    assert result.items[0].client_id == 100
+    assert result.items[0].document_type_code == "C01"
+    assert result.items[0].source.value == "current_snapshot"
+
+
+def test_alerts_tool_returns_valid_tool_result_and_clean_message():
+    gateway = FakeGateway()
+
+    result = query_alerts(
+        gateway,
+        today=TODAY,
+        allowed_company_ids=[1],
+    )
+
+    assert isinstance(result, AlertsResult)
+    assert result.kind == "alerts"
+    assert_valid_contract(result)
+    assert result.total == 1
+    assert result.items[0].client_id == 100
+    assert result.items[0].company_id == 1
+    assert result.items[0].message_clean is None
 
 
 def test_all_tool_results_are_pydantic_and_serializable():
