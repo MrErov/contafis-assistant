@@ -1,10 +1,26 @@
+# Stack LangChain / LangGraph
 langchain
 langchain-community
 langchain-openai
 langgraph
 langsmith
 python-dotenv
+
+# API
 fastapi
 uvicorn
+
+# Retrieval
+chromadb
+rank-bm25
+rapidfuzz
+pypdf
+
+# HTTP, contratos y configuración
+httpx
+pydantic
+pydantic-settings
+
+# Tests
 pytest
 pytest-mock

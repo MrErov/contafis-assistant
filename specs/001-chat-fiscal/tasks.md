@@ -72,10 +72,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_request_contract.py tests/unit/test_config.py tests/unit/test_time_effective_state.py tests/unit/test_domains_aggregation.py tests/unit/test_status_reducer.py` pasa sin red ni tokens.
-- [ ] Todos los tests usan `tmp_path`/dobles y ningún módulo de `domain/` importa `httpx`, LangChain u Odoo.
-- [ ] `requirements.txt` y `.env.example` contienen todas las claves de RNF-003, sin secretos.
-- [ ] La matriz de precedencia está cubierta por una prueba por transición relevante.
+- [x] `pytest tests/unit/test_request_contract.py tests/unit/test_config.py tests/unit/test_time_effective_state.py tests/unit/test_domains_aggregation.py tests/unit/test_status_reducer.py` pasa sin red ni tokens.
+- [x] Todos los tests usan `tmp_path`/dobles y ningún módulo de `domain/` importa `httpx`, LangChain u Odoo.
+- [x] `requirements.txt` y `.env.example` contienen todas las claves de RNF-003, sin secretos.
+- [x] La matriz de precedencia está cubierta por una prueba por transición relevante.
 
 **Trazabilidad:** RF-002, RF-003, RF-007, RF-008, RF-025, RF-026, RF-027, RF-031, RF-034, RF-063, RF-064, RF-065, RF-066, RF-080; RNF-001, RNF-003, RNF-009, RNF-011, RNF-016; AC-19, AC-20, AC-25, AC-44, AC-54.
 
