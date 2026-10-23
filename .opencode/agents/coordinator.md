@@ -1,7 +1,7 @@
 ---
 description: SDD - coordina el flujo completo repartiendo el trabajo entre subagentes
 model: opencode/deepseek-v4.1-flash-free
-mode: primary
+mode: all
 permission:
   edit: deny
   task:
