@@ -336,11 +336,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_threads.py tests/unit/test_classifier.py tests/unit/test_planner.py tests/integration/test_graph_budget.py` pasa.
-- [ ] Un test espía demuestra que la cuarta tool no se ejecuta y que `tool_call_count=3`.
-- [ ] Exactamente 3 tools con fuentes resueltas no emiten `iteration_limit`.
-- [ ] El seguimiento vuelve a consultar y no reutiliza hechos del turno anterior.
-- [ ] El grafo no usa resultados crudos ni historial como fuente de hechos.
+- [x] `pytest tests/unit/test_threads.py tests/unit/test_classifier.py tests/unit/test_planner.py tests/integration/test_graph_budget.py` pasa.
+- [x] Un test espía demuestra que la cuarta tool no se ejecuta y que `tool_call_count=3`.
+- [x] Exactamente 3 tools con fuentes resueltas no emiten `iteration_limit`.
+- [x] El seguimiento vuelve a consultar y no reutiliza hechos del turno anterior.
+- [x] El grafo no usa resultados crudos ni historial como fuente de hechos.
 
 **Trazabilidad:** RF-006, RF-010, RF-011, RF-013, RF-014, RF-015, RF-018, RF-019, RF-054, RF-055, RF-057, RF-058, RF-059, RF-077; AC-09, AC-11, AC-13, AC-15, AC-17, AC-18, AC-40, AC-48, AC-51, AC-57.
 
