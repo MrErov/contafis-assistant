@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "odoo-repo": {
+      "repository": "MrErov/contafis-odoo-19.0v",
+      "branch": "main",
+      "description": "Repositorio del módulo Odoo 19 (ContaFis). Usar para consultar modelos, campos, APIs y estructura de datos del ERP. Es la fuente de verdad para la integración."
+    }
+  }
+}

@@ -11,3 +11,4 @@
 
 ## Decisiones y Notas
 - La conexión con Odoo se hará mediante API XML-RPC (o MCP si se desarrolla).
+- Se configuró opencode.json con una referencia al repo público MrErov/contafis-odoo-19.0v para que los agentes puedan consultar la estructura del ERP.
