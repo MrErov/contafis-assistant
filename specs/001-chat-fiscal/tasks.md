@@ -171,11 +171,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_entities.py tests/unit/test_obligations.py tests/unit/test_clients_companies.py tests/integration/test_erp_tools.py` pasa.
-- [ ] Un test con 60 obligaciones devuelve `total=60`, `returned=50`, `truncated=true`.
-- [ ] Un spy demuestra una sola lectura en lote para contadores de clientes, sin consultas por cliente.
-- [ ] Todas las respuestas de tools validan `returned == len(items)` y `total >= returned`.
-- [ ] No se consulta ni se filtra por `compliance_status`, `cartelera_pending_count` o `compliance_score`.
+- [x] `pytest tests/unit/test_entities.py tests/unit/test_obligations.py tests/unit/test_clients_companies.py tests/integration/test_erp_tools.py` pasa.
+- [x] Un test con 60 obligaciones devuelve `total=60`, `returned=50`, `truncated=true`.
+- [x] Un spy demuestra una sola lectura en lote para contadores de clientes, sin consultas por cliente.
+- [x] Todas las respuestas de tools validan `returned == len(items)` y `total >= returned`.
+- [x] No se consulta ni se filtra por `compliance_status`, `cartelera_pending_count` o `compliance_score`.
 
 **Trazabilidad:** RF-004, RF-020, RF-021, RF-022, RF-023, RF-024, RF-025, RF-028, RF-031, RF-034, RF-061, RF-064, RF-065, RF-066, RF-067; AC-01, AC-02, AC-03, AC-04 (resolución), AC-22, AC-26, AC-29, AC-30, AC-31, AC-32 (obligaciones), AC-49, AC-50, AC-54.
 

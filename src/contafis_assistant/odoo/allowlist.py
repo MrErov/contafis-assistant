@@ -70,6 +70,7 @@ MODEL_POLICIES: dict[str, ModelPolicy] = {
                 "client_id",
                 "client_id.company_id",
                 "obligation_type_id",
+                "obligation_type_id.tax_type",
                 "period",
                 "due_date",
                 "state",
