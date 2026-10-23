@@ -443,11 +443,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/api/test_chat_api.py tests/api/test_health.py tests/api/test_startup.py tests/api/test_lifespan.py` pasa.
-- [ ] Un body no JSON y un `thread_id` inválido devuelven HTTP 200 con `invalid_request` y `thread_id`.
-- [ ] Producción con unsafe inicial no arranca; refresh unsafe devuelve 503 y no ejecuta tools.
-- [ ] `scope_partial` arranca y responde `partial`; nunca 503.
-- [ ] Health no contiene secretos, RIF, nombres ni IDs de compañías.
+- [x] `pytest tests/api/test_chat_api.py tests/api/test_health.py tests/api/test_startup.py tests/api/test_lifespan.py` pasa.
+- [x] Un body no JSON y un `thread_id` inválido devuelven HTTP 200 con `invalid_request` y `thread_id`.
+- [x] Producción con unsafe inicial no arranca; refresh unsafe devuelve 503 y no ejecuta tools.
+- [x] `scope_partial` arranca y responde `partial`; nunca 503.
+- [x] Health no contiene secretos, RIF, nombres ni IDs de compañías.
 
 **Trazabilidad:** RF-001, RF-002, RF-006, RF-052, RF-076, RF-077; RNF-013, RNF-016; AC-17, AC-18, AC-19, AC-20, AC-21, AC-38, AC-40, AC-44, AC-52, AC-55.
 

@@ -11,7 +11,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 
 from contafis_assistant.domain.answer import AnswerComposer
-from contafis_assistant.domain.contracts import EntityRef
+from contafis_assistant.domain.contracts import EntityRef, Warning
 from contafis_assistant.domain.enums import EntityType, Status
 from contafis_assistant.domain.time import Clock
 from contafis_assistant.graph.classify import ClassificationResult
@@ -239,6 +239,8 @@ def run_turn(
     thread_id: str | None = None,
     request_id: str | None = None,
     recursion_limit: int | None = None,
+    scope_snapshot: ScopeSnapshot | None = None,
+    warnings: list[Warning] | None = None,
 ) -> TurnState:
     resolution = _resolve_thread(deps.store, thread_id)
     initial = TurnState(
@@ -247,7 +249,10 @@ def run_turn(
         message=message,
         history=resolution.history,
         thread_warnings=resolution.warnings,
-        scope_snapshot=deps.scope_snapshot,
+        scope_snapshot=(
+            scope_snapshot if scope_snapshot is not None else deps.scope_snapshot
+        ),
+        warnings=list(warnings or []),
         remaining_budget=deps.max_tool_calls,
     )
 
