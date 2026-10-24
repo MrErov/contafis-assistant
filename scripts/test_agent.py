@@ -117,7 +117,18 @@ def _report_trace(
     )
 
 
-def main() -> int:
+def _flush_langsmith() -> None:
+    try:
+        from langsmith import Client
+
+        print(f"Enviando traza al proyecto: {os.environ.get('LANGSMITH_PROJECT')}")
+        Client().flush()
+        print("Flush de LangSmith enviado.")
+    except Exception as exc:
+        print(f"No se pudo enviar la traza a LangSmith: {exc!r}")
+
+
+def _run() -> int:
     try:
         settings = Settings()
     except ValidationError as exc:
@@ -153,6 +164,13 @@ def main() -> int:
         settings.langsmith_project, response.request_id, tracing, has_key
     )
     return 0
+
+
+def main() -> int:
+    try:
+        return _run()
+    finally:
+        _flush_langsmith()
 
 
 if __name__ == "__main__":
