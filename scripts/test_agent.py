@@ -13,23 +13,6 @@ from dotenv import load_dotenv
 
 load_dotenv(ROOT / ".env", override=False)
 
-try:
-    from langsmith import utils
-
-    utils.get_env_var.cache_clear()
-    print(f"SDK PROJECT: {utils.get_env_var('PROJECT')}")
-    print(f"SDK ENDPOINT: {utils.get_env_var('ENDPOINT')}")
-except Exception:
-    pass
-
-print("=== DIAGNÓSTICO LANGSMITH ===")
-print(f"TRACING: {os.getenv('LANGSMITH_TRACING')}")
-print(f"PROJECT: {os.getenv('LANGSMITH_PROJECT')}")
-print(f"ENDPOINT: {os.getenv('LANGSMITH_ENDPOINT')}")
-print(f"API_KEY (primeros 10): {os.getenv('LANGSMITH_API_KEY', '')[:10]}...")
-print(f"WORKSPACE_ID: {os.getenv('LANGSMITH_WORKSPACE_ID', 'No definido')}")
-print("============================")
-
 from pydantic import ValidationError
 
 from contafis_assistant.config import Settings
