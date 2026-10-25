@@ -1,12 +1,13 @@
 ---
 description: SDD - implementa UNA tarea, tests primero (TDD)
-model: opencode/deepseek-v4.1-flash-free
+model: deepseek-ai/deepseek-v4.1-flash
 mode: subagent
 permission:
   edit:
     "*": deny
     "src/**": allow
     "tests/**": allow
+    "scripts/**": allow
     "specs/**/tasks.md": allow
   bash:
     "*": deny
