@@ -107,4 +107,9 @@ class Settings(BaseSettings):
         if self.langsmith_tracing is None:
             self.langsmith_tracing = self.app_env == "development"
 
+        if self.app_env == "production" and not self.odoo_readonly_attested:
+            raise ValueError(
+                "ODOO_READONLY_ATTESTED=true es obligatorio en producción"
+            )
+
         return self

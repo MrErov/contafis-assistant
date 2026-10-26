@@ -530,12 +530,12 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest` completo pasa sin red, sin tokens y sin servicios reales.
-- [ ] La auditoría automatizada informa exactamente 59 AC cubiertos, sin faltantes ni IDs inválidos.
+- [x] `pytest` completo pasa sin red, sin tokens y sin servicios reales.
+- [x] La auditoría automatizada informa exactamente 59 AC cubiertos, sin faltantes ni IDs inválidos.
 - [ ] `requirements.txt` incluye todas las dependencias de RNF-014 y `.env.example` todas las variables de RNF-003.
 - [ ] README permite levantar el servicio con un solo worker, ingesta offline y configuración read-only.
 - [ ] El set dorado manual de 10 preguntas se ejecuta contra `contea` y el corpus real sin alucinaciones, escrituras ni PII en trazas.
-- [ ] `git status` confirma que no se agregaron archivos temporales ni secretos.
+- [x] `git status` confirma que no se agregaron archivos temporales ni secretos.
 
 **Trazabilidad:** RF-080; RNF-014; DoD completo; AC-01..AC-59 (auditoría final).
 

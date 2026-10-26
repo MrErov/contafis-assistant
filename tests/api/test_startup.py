@@ -21,7 +21,7 @@ def test_invalid_configuration_does_not_start(settings_env):
 
 
 def test_production_unsafe_initial_does_not_start(make_settings):
-    settings = make_settings(APP_ENV="production")
+    settings = make_settings(APP_ENV="production", ODOO_READONLY_ATTESTED="true")
     unsafe = scope_snapshot(
         state=ScopeState.scope_unsafe,
         reason=ScopeReason.admin,

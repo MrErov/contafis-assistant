@@ -93,7 +93,7 @@ def test_scope_partial_starts_and_responds_partial_never_503(make_settings):
 def test_production_refresh_unsafe_returns_503_and_does_not_run_tools(
     make_settings,
 ):
-    settings = make_settings(APP_ENV="production")
+    settings = make_settings(APP_ENV="production", ODOO_READONLY_ATTESTED="true")
     safe = scope_snapshot(app_env="production")
     runtime, scope, _corpus, classifier, tool = make_runtime(
         settings, snapshot=safe
