@@ -15,10 +15,10 @@ Asistente fiscal conversacional basado en RAG para contadores venezolanos.
 
 ## Índice de Especificaciones
 - [001-chat-fiscal](specs/001-chat-fiscal/spec.md) — MVP del Asistente (Conversacional + RAG + Odoo).
-  - Estado: ✅ COMPLETADA (562 tests).
+  - Estado: ✅ COMPLETADA (671 tests, 59 AC, 48 acceptance/security tests).
 
 ## Roadmap
-- ☑ Spec 001: Chat Fiscal MVP.
+- ☑ Spec 001: Chat Fiscal MVP (671 tests, 100% TDD).
 - ☐ Spec 002: Interfaz de Usuario (Streamlit o web).
 - ☐ Spec 003: Autenticación Real (eliminar `scope_admin_key`).
 - ☐ Spec 004: Ingesta dinámica de PDFs (Gacetas/Leyes).
