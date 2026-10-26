@@ -18,6 +18,7 @@ from contafis_assistant.domain.contracts import (
 )
 from contafis_assistant.domain.enums import Intent, Status
 from contafis_assistant.domain.time import format_date
+from contafis_assistant.observability.redaction import redact_text
 
 AnswerComposer = Callable[["AnswerContext"], str]
 
@@ -182,6 +183,13 @@ def _item_state(item: Any) -> str | None:
     return None
 
 
+def _item_alert_type(item: Any) -> str | None:
+    value = getattr(item, "alert_type", None)
+    if value:
+        return redact_text(str(value))
+    return None
+
+
 def _result_lines(result: ToolResult) -> list[str]:
     label = _RESULT_LABELS.get(result.kind, result.kind)
     if result.total is None:
@@ -198,6 +206,9 @@ def _result_lines(result: ToolResult) -> list[str]:
         name = _item_name(item)
         if name:
             parts.append(name)
+        alert_type = _item_alert_type(item)
+        if alert_type:
+            parts.append(alert_type)
         item_date = _item_date(item)
         if item_date is not None:
             parts.append(f"fecha {format_date(item_date)}")

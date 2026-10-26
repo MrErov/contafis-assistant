@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Mapping
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,6 +42,7 @@ from contafis_assistant.memory.threads import (
     TimeRange,
 )
 from contafis_assistant.odoo.scope import ScopeSnapshot
+from contafis_assistant.observability.tracing import Tracer, trace_turn_state
 
 
 class RunTracker:
@@ -60,6 +62,8 @@ class GraphDependencies:
     recursion_limit: int = 12
     scope_snapshot: ScopeSnapshot | None = None
     answer_composer: AnswerComposer | None = None
+    tracer: Tracer | None = None
+    known_names: Sequence[str] = ()
 
 
 def _as_state(value: Any) -> TurnState:
@@ -243,6 +247,7 @@ def run_turn(
     warnings: list[Warning] | None = None,
 ) -> TurnState:
     resolution = _resolve_thread(deps.store, thread_id)
+    started = time.perf_counter()
     initial = TurnState(
         request_id=request_id or str(uuid.uuid4()),
         thread_id=resolution.thread_id,
@@ -298,6 +303,13 @@ def run_turn(
     if deps.store is not None:
         final = _record(final, deps.store)
 
+    latency_ms = max(0, int((time.perf_counter() - started) * 1000))
+    trace_turn_state(
+        deps.tracer,
+        final,
+        latency_ms=latency_ms,
+        thread_id=resolution.thread_id,
+    )
     return final
 
 

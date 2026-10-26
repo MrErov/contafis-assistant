@@ -24,6 +24,7 @@ from contafis_assistant.odoo.tools.entities import (
     EntityResolution,
     normalize_entity_name,
 )
+from contafis_assistant.observability.redaction import redact_exception
 
 WARNING_MESSAGES = {
     WarningCode.scope_partial: "El alcance de compañías es incompleto.",
@@ -126,7 +127,7 @@ def classify_node(state: TurnState, classifier: ClassifierFn) -> TurnState:
                     [
                         _warning(
                             WarningCode.source_unavailable,
-                            f"No se pudo clasificar la consulta: {exc}",
+                            f"No se pudo clasificar la consulta: {redact_exception(exc)}",
                         )
                     ],
                 ),
@@ -225,7 +226,7 @@ def resolve_entity_node(
                     [
                         _warning(
                             WarningCode.source_unavailable,
-                            f"No se pudo resolver la entidad: {exc}",
+                            f"No se pudo resolver la entidad: {redact_exception(exc)}",
                         )
                     ],
                 ),

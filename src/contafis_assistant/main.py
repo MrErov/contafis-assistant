@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -40,6 +41,12 @@ from contafis_assistant.graph.state import (
     TurnState,
 )
 from contafis_assistant.memory.threads import ThreadStore
+from contafis_assistant.observability.redaction import wrap_untrusted
+from contafis_assistant.observability.tracing import (
+    hide_content_env,
+    tracer_from_settings,
+    tracing_enabled,
+)
 from contafis_assistant.odoo.client import OdooClient
 from contafis_assistant.odoo.scope import (
     ScopeReason,
@@ -113,6 +120,7 @@ class ChatRuntime:
     corpus: Any | None = None
     odoo_client: Any | None = None
     clock: Clock | None = None
+    tracer: Any | None = None
     worker_count: int = UVICORN_WORKERS
     ready: bool = False
     _startup_snapshot: ScopeSnapshot | None = None
@@ -519,7 +527,14 @@ class _LazyOpenAIClassifier:
         self._json_model: Any | None = None
 
     def _messages(self, message: str) -> list[tuple[str, str]]:
-        return [("system", _CLASSIFIER_PROMPT), ("human", message)]
+        return [
+            ("system", _CLASSIFIER_PROMPT),
+            ("human", wrap_untrusted(message)),
+        ]
+
+    def messages_for_testonly(self, message: str) -> tuple[str, str]:
+        """Expone el par (system, human) real; el humano se delimita como dato."""
+        return _CLASSIFIER_PROMPT, wrap_untrusted(message)
 
     def _structured(self) -> Any:
         if self._structured_model is None:
@@ -622,8 +637,12 @@ def build_runtime(
     answer_composer: AnswerComposer | None = None,
     store: ThreadStore | None = None,
     clock: Clock | None = None,
+    tracer: Any | None = None,
 ) -> ChatRuntime:
     clock = clock or Clock()
+    tracer = tracer if tracer is not None else tracer_from_settings(settings)
+    if tracing_enabled(settings):
+        os.environ.update(hide_content_env(settings))
     client = odoo_client
     if client is None:
         client = OdooClient(
@@ -673,6 +692,7 @@ def build_runtime(
         max_tool_calls=settings.max_tool_calls,
         recursion_limit=settings.recursion_limit,
         answer_composer=answer_composer,
+        tracer=tracer,
     )
     return ChatRuntime(
         settings=settings,
@@ -682,6 +702,7 @@ def build_runtime(
         corpus=corpus,
         odoo_client=client,
         clock=clock,
+        tracer=tracer,
     )
 
 
@@ -761,4 +782,5 @@ __all__ = [
     "build_runtime",
     "create_app",
     "run",
+    "wrap_untrusted",
 ]

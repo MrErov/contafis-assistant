@@ -16,6 +16,7 @@ from contafis_assistant.graph.state import (
     ToolName,
     TurnState,
 )
+from contafis_assistant.observability.redaction import redact_exception
 
 
 class ToolOutcome(BaseModel):
@@ -165,7 +166,7 @@ def execute_action(
     try:
         outcome = _normalize(tool(action.args))
     except Exception as exc:
-        message = f"La tool {action.tool.value} falló: {exc}"
+        message = f"La tool {action.tool.value} falló: {redact_exception(exc)}"
         retryable_source = state.retryable_source
         if action.source not in retried_sources:
             retryable_source = action.source

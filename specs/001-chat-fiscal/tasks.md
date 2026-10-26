@@ -489,11 +489,11 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_redaction.py tests/integration/test_tracing.py tests/integration/test_prompt_injection.py tests/unit/test_logging.py` pasa.
-- [ ] Un test con PII en mensaje/documentos confirma que logs y trazas no la contienen.
-- [ ] Un documento malicioso no cambia la allowlist, el catálogo de tools ni el estado final.
-- [ ] Ningún warning/respuesta contiene secretos, URLs internas ni cadenas de conexión.
-- [ ] LangSmith está deshabilitado en tests y habilitado por defecto en desarrollo con contenido oculto.
+- [x] `pytest tests/unit/test_redaction.py tests/integration/test_tracing.py tests/integration/test_prompt_injection.py tests/unit/test_logging.py` pasa.
+- [x] Un test con PII en mensaje/documentos confirma que logs y trazas no la contienen.
+- [x] Un documento malicioso no cambia la allowlist, el catálogo de tools ni el estado final.
+- [x] Ningún warning/respuesta contiene secretos, URLs internas ni cadenas de conexión.
+- [x] LangSmith está deshabilitado en tests y habilitado por defecto en desarrollo con contenido oculto.
 
 **Trazabilidad:** RF-051, RF-052, RF-053, RF-057, RF-078, RF-079; RNF-005, RNF-008, RNF-015; AC-16, AC-39.
 
