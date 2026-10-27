@@ -4,19 +4,28 @@
 - Repo inicializado; Fase 0 (entorno y estructura SDD) completada.
 - Núcleo de 8 skills LangChain instalado en `.agents/skills/` (lockfile: `skills-lock.json`): `ecosystem-primer`, `langchain-dependencies`, `langchain-fundamentals`, `langchain-rag`, `langgraph-fundamentals`, `langgraph-persistence` (oficiales) + `langchain-architecture`, `rag-implementation` (`wshobson/agents`).
 - **Spec 001 cerrada y completada al 100%**: `specs/001-chat-fiscal/spec.md` (863 líneas, 72 RF, 59 AC, 47 EC). Incluye 8 rondas de QA con todos los bloqueantes resueltos.
-- **Suite de tests: 671 tests en verde** (T01–T10 completadas, 100% TDD, sin red/tokens/servicios reales).
+- **Suite de tests: 686 tests en verde** (Spec 001: 671 + Spec 002: 15 nuevos, 100% TDD, sin red/tokens/servicios reales).
   - Tests unitarios: 512
   - Tests de integración: 111
   - Tests de API: 62
   - Tests de aceptación E2E: 23 (9 estados de la matriz §8.3)
   - Tests de seguridad/auditoría: 24 (allowlist, PII, prompt injection, read-only)
-- **Plan y tareas completados**: `specs/001-chat-fiscal/plan.md`, `specs/001-chat-fiscal/tasks.md` (T01–T10 todas `[x]`).
+  - Tests de UI (login/logout): 6
+- **Plan y tareas completados**: `specs/001-chat-fiscal/plan.md`, `specs/001-chat-fiscal/tasks.md` (T01–T10 todas `[x]`); `specs/002-ui-auth/plan.md`, `specs/002-ui-auth/tasks.md` (T01–T10 todas `[x]`).
 - Agentes SDD configurados en `.opencode/agents/`: `coordinator`, `planner`, `implementer`, `reviewer`.
 
+## Hito: MVP Visual Completado (Spec 002)
+- ✅ UI Streamlit funcional con login/logout por API Key de Odoo 19
+- ✅ Panel de alcance (sidebar) con chips de compañía
+- ✅ Chat conectado a FastAPI con headers `X-User-Token` correctos
+- ✅ Integración real con Odoo 19 (JSON/2) y NVIDIA NIM (OpenAI-compatible)
+- ✅ Observabilidad fail-safe (LangSmith sin tumbar la respuesta)
+- ✅ 686 tests pasando (671 Spec 001 + 15 Spec 002)
+
 ## Próximos Pasos
-1. **Spec 002**: Interfaz de Usuario (Streamlit o Web) — frontend para el asistente.
-2. **Spec 003**: Autenticación Real — eliminar `scope_admin_key`, implementar auth multi-usuario real.
-3. **Spec 004**: Ingesta dinámica de PDFs — Gacetas/Leyes, OCR, versionado, reindexado en runtime.
+1. **Spec 003**: Autenticación Real — eliminar `scope_admin_key`, implementar auth multi-usuario real.
+2. **Spec 004**: Dockerización y Deployment — contenedores, CI/CD, staging/producción.
+3. **Spec 005**: Ingesta dinámica de PDFs — Gacetas/Leyes, OCR, versionado, reindexado en runtime.
 
 ## Decisiones y Notas
 - Odoo 19 se consulta con **JSON/2** (`POST /json/2/<model>/<method>`), `Authorization: Bearer $ODOO_API_KEY` y `X-Odoo-Database: contea`. No se usa XML-RPC ni usuario/password.

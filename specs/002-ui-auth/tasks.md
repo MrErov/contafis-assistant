@@ -82,10 +82,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_user_scope.py tests/api/test_scope_endpoint.py` pasa.
-- [ ] El cache almacena solo `user_key`/snapshots (test que afirma que el token crudo no está en ninguna entrada inspeccionable).
-- [ ] `classify_scope` de Spec 001 se reutiliza sin modificaciones (diff mínimo; sin duplicar la lógica de clasificación).
-- [ ] El segundo turno con el mismo token dentro del TTL ejecuta cero RPC de scope adicionales.
+- [x] `pytest tests/unit/test_user_scope.py tests/api/test_scope_endpoint.py` pasa.
+- [x] El cache almacena solo `user_key`/snapshots (test que afirma que el token crudo no está en ninguna entrada inspeccionable).
+- [x] `classify_scope` de Spec 001 se reutiliza sin modificaciones (diff mínimo; sin duplicar la lógica de clasificación).
+- [x] El segundo turno con el mismo token dentro del TTL ejecuta cero RPC de scope adicionales.
 
 **Trazabilidad:** RF-104, RF-105, RF-107, RF-111; RNF-105; AC-104, AC-105, AC-106, AC-107, AC-109, AC-110; EC-102, EC-104.
 
@@ -115,10 +115,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/integration/test_user_token_turn.py tests/unit/test_user_stores.py` pasa sin red.
-- [ ] Ningún RPC del turno usa `ODOO_API_KEY`; test que falla si el header `Authorization` no es el token del usuario.
-- [ ] El grafo, el presupuesto de tools y la precedencia de estados no cambian (diff de `graph/` limitado a `run_turn`/`user_key`).
-- [ ] Los stores de usuario se bound por `USER_STORES_MAX` con test de expulsión.
+- [x] `pytest tests/integration/test_user_token_turn.py tests/unit/test_user_stores.py` pasa sin red.
+- [x] Ningún RPC del turno usa `ODOO_API_KEY`; test que falla si el header `Authorization` no es el token del usuario.
+- [x] El grafo, el presupuesto de tools y la precedencia de estados no cambian (diff de `graph/` limitado a `run_turn`/`user_key`).
+- [x] Los stores de usuario se bound por `USER_STORES_MAX` con test de expulsión.
 
 **Trazabilidad:** RF-102, RF-105, RF-106, RF-110; RNF-005; AC-103, AC-105, AC-106, AC-107, AC-108; EC-106.
 
@@ -146,10 +146,10 @@
 
 **Hecho cuando:**
 
-- [ ] Los tests ampliados pasan y la suite de Spec 001 correspondiente sigue verde.
-- [ ] Sin probe, el arranque no ejecuta ningún RPC (transport fake cuenta cero requests).
-- [ ] `/health` no expone token ni `user_key`; mantiene exactamente los campos de Spec 001.
-- [ ] Con probe, el fail-fast de producción por `scope_unsafe` se conserva (test existente sigue pasando).
+- [x] Los tests ampliados pasan y la suite de Spec 001 correspondiente sigue verde.
+- [x] Sin probe, el arranque no ejecuta ningún RPC (transport fake cuenta cero requests).
+- [x] `/health` no expone token ni `user_key`; mantiene exactamente los campos de Spec 001.
+- [x] Con probe, el fail-fast de producción por `scope_unsafe` se conserva (test existente sigue pasando).
 
 **Trazabilidad:** RF-108, RF-112, RF-113, RF-114; RNF-103; AC-111; EC-102.
 
@@ -174,10 +174,10 @@
 
 **Hecho cuando:**
 
-- [ ] La suite completa de Spec 001 migrada pasa en verde.
-- [ ] Existe un test que documenta el 401 sin header (AC-101) y otro que confirma que el contrato de respuesta no cambió (AC-125).
-- [ ] Ningún archivo de `specs/001-chat-fiscal/` fue modificado.
-- [ ] `git diff --stat` de `src/` en esta tarea muestra solo cambios de test/fixtures más lo aditivo autorizado.
+- [x] La suite completa de Spec 001 migrada pasa en verde.
+- [x] Existe un test que documenta el 401 sin header (AC-101) y otro que confirma que el contrato de respuesta no cambió (AC-125).
+- [x] Ningún archivo de `specs/001-chat-fiscal/` fue modificado.
+- [x] `git diff --stat` de `src/` en esta tarea muestra solo cambios de test/fixtures más lo aditivo autorizado.
 
 **Trazabilidad:** RF-110; AC-125; §14 de la spec.
 
@@ -240,10 +240,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/ui/test_app_chat.py tests/ui/test_app_errors.py` pasa.
-- [ ] Los tests afirman el header `X-User-Token` en cada request y el cuerpo `{message, thread_id}` (AC-118).
-- [ ] El `thread_id` no cambia entre turnos de la misma sesión y se descarta al hacer logout (AC-122, RF-126).
-- [ ] Ningún camino de error deja `at.exception` poblado ni muestra detalles internos (URL, token, cuerpos crudos).
+- [x] `pytest tests/ui/test_app_chat.py tests/ui/test_app_errors.py` pasa.
+- [x] Los tests afirman el header `X-User-Token` en cada request y el cuerpo `{message, thread_id}` (AC-118).
+- [x] El `thread_id` no cambia entre turnos de la misma sesión y se descarta al hacer logout (AC-122, RF-126).
+- [x] Ningún camino de error deja `at.exception` poblado ni muestra detalles internos (URL, token, cuerpos crudos).
 
 **Trazabilidad:** RF-124, RF-125, RF-126, RF-128, RF-130, RF-131, RF-132; RNF-101; AC-117, AC-118, AC-120, AC-121, AC-122, AC-123; EC-108, EC-112.
 
@@ -271,10 +271,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/ui/test_app_scope_panel.py` pasa.
-- [ ] El mensaje compuesto con chip respeta exactamente el formato `Compañía <nombre>: <texto>` (AC-119).
-- [ ] El panel hace una llamada a `/scope` por sesión salvo refresco explícito (RNF-105).
-- [ ] La UI no decide alcance propio: solo renderiza `ScopeInfo` del backend.
+- [x] `pytest tests/ui/test_app_scope_panel.py` pasa.
+- [x] El mensaje compuesto con chip respeta exactamente el formato `Compañía <nombre>: <texto>` (AC-119).
+- [x] El panel hace una llamada a `/scope` por sesión salvo refresco explícito (RNF-105).
+- [x] La UI no decide alcance propio: solo renderiza `ScopeInfo` del backend.
 
 **Trazabilidad:** RF-127, RF-107, RF-111 (consumo); RNF-105; AC-115, AC-119; EC-103, EC-105, EC-110.
 
@@ -301,10 +301,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/unit/test_tracing_user.py tests/integration/test_tracing.py` pasa.
-- [ ] Los tests existentes de tracing siguen verdes (default `None` no rompe el payload).
-- [ ] Un test adversario confirma que el token de usuario no aparece en el payload emitido.
-- [ ] LangSmith permanece deshabilitado en tests/CI (sin cliente real).
+- [x] `pytest tests/unit/test_tracing_user.py tests/integration/test_tracing.py` pasa.
+- [x] Los tests existentes de tracing siguen verdes (default `None` no rompe el payload).
+- [x] Un test adversario confirma que el token de usuario no aparece en el payload emitido.
+- [x] LangSmith permanece deshabilitado en tests/CI (sin cliente real).
 
 **Trazabilidad:** RF-109; RNF-104; AC-112.
 
@@ -330,9 +330,9 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/acceptance/test_ui_auth_acceptance.py` y la suite completa pasan (001 migrada + 002).
-- [ ] La auditoría de trazabilidad no encuentra AC sin prueba.
-- [ ] `requirements.txt`/`.env.example`/README actualizados y sin secretos; `streamlit-testing` ausente.
-- [ ] Verificación manual documentada: login → chat → logout contra backend local con token real de solo lectura (registro en el cierre de aceptación, fuera de CI).
+- [x] `pytest tests/acceptance/test_ui_auth_acceptance.py` y la suite completa pasan (001 migrada + 002).
+- [x] La auditoría de trazabilidad no encuentra AC sin prueba.
+- [x] `requirements.txt`/`.env.example`/README actualizados y sin secretos; `streamlit-testing` ausente.
+- [x] Verificación manual documentada: login → chat → logout contra backend local con token real de solo lectura (registro en el cierre de aceptación, fuera de CI).
 
 **Trazabilidad:** AC-101..AC-125; RNF-103, RNF-106; §15/§18 de la spec.
