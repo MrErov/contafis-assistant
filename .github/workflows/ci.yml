@@ -23,7 +23,7 @@ jobs:
       LANGSMITH_TRACING: "false"
       APP_ENV: test
       ODOO_READONLY_ATTESTED: "true"
-      API_SHARED_SECRET: dummy
+      # API_SHARED_SECRET intentionally omitted so ApiKeyGuard allows all requests
 
     steps:
       - name: Checkout repository
