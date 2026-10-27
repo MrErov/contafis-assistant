@@ -8,11 +8,14 @@ porque `Settings.langsmith_tracing` es falso fuera de desarrollo.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from contafis_assistant.observability.redaction import redact_payload
+
+logger = logging.getLogger(__name__)
 
 TRACE_FIELDS = frozenset(
     {
@@ -87,7 +90,11 @@ class LangSmithTracer:
     def record_turn(self, event: TraceEvent) -> None:
         payload = redact_payload(event.as_payload(), self.known_names)
         self.events.append(event)
-        self.sink.emit(payload)
+        try:
+            self.sink.emit(payload)
+        except Exception as exc:
+            # Fail-safe: el fallo en observabilidad NO debe tumbar la respuesta al usuario
+            logger.warning("Tracing sink emit failed: %s", exc, exc_info=True)
 
 
 def _default_sink() -> TraceSink:

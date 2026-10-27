@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contafis-assistant"
+version = "0.1.0"
+description = "Asistente fiscal ContaFis - RAG con LangChain/LangGraph"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "httpx>=0.26.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-core>=0.1.0",
+    "langgraph>=0.0.40",
+    "langsmith>=0.1.0",
+    "openai>=1.10.0",
+    "chromadb>=0.4.0",
+    "tenacity>=8.2.0",
+    "python-dateutil>=2.8.0",
+    "PyYAML>=6.0.0",
+    "orjson>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "faker>=24.0.0",
+    "httpx>=0.26.0",
+    "streamlit>=1.30.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+importmode = "importlib"
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+select = ["E", "F", "I", "UP", "W"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

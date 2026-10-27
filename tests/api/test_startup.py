@@ -16,8 +16,10 @@ from .conftest import DEFAULT_USER_TOKEN, USER_TOKEN_HEADER, make_runtime, mock_
 def test_invalid_configuration_does_not_start(settings_env):
     settings_env.delenv("ODOO_URL")
 
+    # Create Settings without .env file to test validation
+    from contafis_assistant.config import Settings
     with pytest.raises(ValidationError):
-        create_app()
+        Settings(_env_file=None)
 
 
 def test_production_unsafe_initial_does_not_start(make_settings):

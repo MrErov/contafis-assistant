@@ -950,7 +950,7 @@ def create_app(
     runtime: ChatRuntime | None = None,
     runtime_factory: Callable[[Settings], ChatRuntime] | None = None,
 ) -> FastAPI:
-    resolved = settings or Settings(_env_file=None)
+    resolved = settings or Settings()
     app = FastAPI(
         title="ContaFis Assistant",
         version=__version__,
@@ -982,7 +982,7 @@ def create_app(
 def run() -> None:
     import uvicorn
 
-    resolved = Settings(_env_file=None)
+    resolved = Settings()
     uvicorn.run(
         "contafis_assistant.main:create_app",
         factory=True,
@@ -995,6 +995,10 @@ def run() -> None:
 if __name__ == "__main__":
     run()
 
+# Variable app para que Uvicorn la encuentre directamente (ej: uvicorn contafis_assistant.main:app)
+# Se crea al importar el módulo; Settings() leerá .env gracias a model_config
+app = create_app()
+
 
 __all__ = [
     "ChatRuntime",
@@ -1003,4 +1007,5 @@ __all__ = [
     "create_app",
     "run",
     "wrap_untrusted",
+    "app",
 ]
