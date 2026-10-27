@@ -9,7 +9,7 @@ from contafis_assistant.graph.build import GraphDependencies
 from contafis_assistant.main import create_app
 from contafis_assistant.memory.threads import ThreadStore
 
-from .conftest import FakeOdooClient, make_runtime
+from .conftest import DEFAULT_USER_TOKEN, USER_TOKEN_HEADER, FakeOdooClient, make_runtime
 
 
 def test_lifespan_wires_runtime_and_closes_resources(make_settings):
@@ -64,6 +64,7 @@ def test_requests_before_initialization_are_rejected_with_503(make_settings):
     runtime, _scope, _corpus, classifier, tool = make_runtime(settings)
     app = create_app(settings, runtime=runtime)
     client = TestClient(app)
+    client.headers.update({USER_TOKEN_HEADER: DEFAULT_USER_TOKEN})
 
     health = client.get("/health")
     chat = client.post("/chat", json={"message": "obligaciones"})

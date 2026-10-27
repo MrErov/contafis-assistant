@@ -63,7 +63,9 @@ class TestEndToEndStatusMatrix:
         return make_settings()
 
     def _make_client(self, settings, runtime):
-        return TestClient(create_app(settings, runtime=runtime))
+        client = TestClient(create_app(settings, runtime=runtime))
+        client.headers.update({"X-User-Token": "test-user-token"})
+        return client
 
     def _assert_valid_uuid4(self, value: str):
         parsed = uuid.UUID(value)

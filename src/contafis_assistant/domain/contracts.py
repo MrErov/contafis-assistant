@@ -102,6 +102,27 @@ class CompanyBreakdown(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
 
 
+class CompanyRef(BaseModel):
+    """Compañía visible para el usuario (endpoint /scope)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1)
+
+
+class ScopeInfo(BaseModel):
+    """Respuesta de GET /scope con alcance del usuario autenticado."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uid: int
+    companies: list[CompanyRef]
+    scope_state: str
+    scope_complete: bool
+    tools_enabled: bool
+
+
 # ---------------------------------------------------------------------------
 # Ítems de tools
 # ---------------------------------------------------------------------------

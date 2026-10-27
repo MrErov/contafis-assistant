@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -15,6 +15,7 @@ from contafis_assistant import __version__
 from contafis_assistant.api.errors import ServiceUnavailable, unavailable_payload
 from contafis_assistant.api.routes import router
 from contafis_assistant.api.security import API_KEY_HEADER, ApiKeyGuard
+from contafis_assistant.api.user_auth import UserContext
 from contafis_assistant.config import Settings
 from contafis_assistant.domain.answer import AnswerComposer
 from contafis_assistant.domain.contracts import ChatResponse, Warning
@@ -124,6 +125,7 @@ class ChatRuntime:
     worker_count: int = UVICORN_WORKERS
     ready: bool = False
     _startup_snapshot: ScopeSnapshot | None = None
+    user_transport: Any | None = None
 
     def startup(self) -> None:
         if self.corpus is not None:
@@ -232,6 +234,222 @@ class ChatRuntime:
             warnings=warnings,
         )
         return to_chat_response(state)
+
+    def chat_with_user(
+        self,
+        user_ctx: UserContext,
+        message: str,
+        *,
+        thread_id: str | None,
+        request_id: str,
+    ) -> ChatResponse:
+        """Ejecuta un turno con el contexto del usuario autenticado (T01/T03).
+
+        Usa el cliente Odoo del usuario, su snapshot de alcance y un store
+        segmentado por user_key (se implementará en T03).
+        """
+        snapshot = user_ctx.snapshot
+        warnings = self._scope_warnings(snapshot)
+
+        # Gate de alcance: producción + unsafe → 503 sin ejecutar tools
+        if self.settings.app_env == "production" and snapshot.state.value == "scope_unsafe":
+            from contafis_assistant.api.errors import ServiceUnavailable
+            raise ServiceUnavailable("scope_unsafe en producción")
+
+        # Si tools no habilitadas → turno degradado
+        if not snapshot.tools_enabled:
+            return self._degraded_turn(
+                message,
+                thread_id=thread_id,
+                request_id=request_id,
+                snapshot=snapshot,
+                warnings=warnings,
+            )
+
+        # Usar tools pre-configuradas si existen (modo test/legacy), sino construir dinámicas
+        if self.deps.tools:
+            # Modo test/legacy: usar tools pre-configuradas (CountingTool, etc.)
+            # pero con store, entity_resolver y scope_snapshot del usuario
+            user_deps = replace(
+                self.deps,
+                store=self.store,
+                entity_resolver=self._build_entity_resolver(user_ctx),
+                scope_snapshot=snapshot,
+            )
+        else:
+            # Modo producción: construir tools dinámicas por usuario
+            user_deps = self._build_user_deps(user_ctx)
+
+        state = run_turn(
+            message,
+            deps=user_deps,
+            thread_id=thread_id,
+            request_id=request_id,
+            scope_snapshot=snapshot,
+            warnings=warnings,
+        )
+        return to_chat_response(state)
+
+    def _build_entity_resolver(self, user_ctx: UserContext) -> Callable[[str], Any]:
+        """Construye entity_resolver para el usuario."""
+        from contafis_assistant.odoo.tools.entities import resolve_entity
+
+        def resolver(mention: str) -> Any:
+            snap = user_ctx.scope_service.current()
+            allowed = snap.user_company_ids if snap is not None else []
+            return resolve_entity(
+                user_ctx.client,
+                mention,
+                allowed_company_ids=allowed,
+                scope_complete=snap.scope_complete if snap is not None else True,
+                fuzzy_min_score=self.settings.fuzzy_min_score,
+            )
+
+        return resolver
+
+    def _build_user_deps(self, user_ctx: UserContext) -> GraphDependencies:
+        """Construye GraphDependencies con tools y entity_resolver del usuario."""
+        from contafis_assistant.graph.build import GraphDependencies
+        from contafis_assistant.rag.retriever import RagRetriever
+
+        # Reutilizar el corpus global para RAG (no depende del usuario)
+        retriever = RagRetriever(
+            self.corpus,
+            embedder=_LazyEmbedder(self.settings.embedding_model),
+            dense_top_k=self.settings.retrieval_dense_top_k,
+            bm25_top_k=self.settings.retrieval_bm25_top_k,
+            final_top_k=self.settings.retrieval_final_top_k,
+            rrf_k=self.settings.rrf_k,
+            dense_min_score=self.settings.dense_min_score,
+            bm25_min_score=self.settings.bm25_min_score,
+        )
+
+        client = user_ctx.client
+        scope = user_ctx.scope_service
+
+        def _allowed_company_ids(scope_service: Any) -> list[int]:
+            snap = scope_service.current()
+            return list(snap.user_company_ids)
+
+        def obligations(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.odoo.tools.obligations import query_obligations
+            return _tool_outcome(
+                query_obligations(
+                    client,
+                    today=self.clock.today_caracas(),
+                    allowed_company_ids=_allowed_company_ids(scope),
+                    client_id=args.client_id,
+                    company_id=args.company_id,
+                    tax_type=args.tax_type,
+                    states=args.states or None,
+                    detail_limit=self.settings.detail_limit,
+                )
+            )
+
+        def clients(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.odoo.tools.clients import query_clients
+            return _tool_outcome(
+                query_clients(
+                    client,
+                    today=self.clock.today_caracas(),
+                    allowed_company_ids=_allowed_company_ids(scope),
+                    client_id=args.client_id,
+                    company_id=args.company_id,
+                    detail_limit=self.settings.detail_limit,
+                )
+            )
+
+        def documents(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.odoo.tools.documents import query_documents
+            return _tool_outcome(
+                query_documents(
+                    client,
+                    today=self.clock.today_caracas(),
+                    allowed_company_ids=_allowed_company_ids(scope),
+                    client_id=args.client_id,
+                    company_id=args.company_id,
+                    detail_limit=self.settings.detail_limit,
+                )
+            )
+
+        def alerts(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.odoo.tools.alerts import query_alerts
+            return _tool_outcome(
+                query_alerts(
+                    client,
+                    today=self.clock.today_caracas(),
+                    allowed_company_ids=_allowed_company_ids(scope),
+                    client_id=args.client_id,
+                    company_id=args.company_id,
+                    states=args.states or None,
+                    detail_limit=self.settings.detail_limit,
+                )
+            )
+
+        def companies(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.odoo.tools.companies import query_companies
+            return _tool_outcome(
+                query_companies(
+                    client,
+                    today=self.clock.today_caracas(),
+                    allowed_company_ids=_allowed_company_ids(scope),
+                    detail_limit=self.settings.detail_limit,
+                )
+            )
+
+        def normativa(args: Any) -> Any:
+            from contafis_assistant.graph.executor import ToolOutcome
+            from contafis_assistant.rag.tool import query_normativa
+            from contafis_assistant.domain.enums import Intent
+            result = query_normativa(
+                args.query or "",
+                retriever=retriever,
+                intent=Intent.normativa,
+            )
+            return ToolOutcome(
+                status=result.status,
+                data=list(result.data),
+                sources=list(result.sources),
+                warnings=list(result.warnings),
+            )
+
+        def entity_resolver(mention: str) -> Any:
+            from contafis_assistant.odoo.tools.entities import resolve_entity
+            snap = scope.current()
+            allowed = snap.user_company_ids if snap is not None else []
+            return resolve_entity(
+                client,
+                mention,
+                allowed_company_ids=allowed,
+                scope_complete=snap.scope_complete if snap is not None else True,
+                fuzzy_min_score=self.settings.fuzzy_min_score,
+            )
+
+        tools = {
+            "query_obligations": obligations,
+            "query_clients": clients,
+            "query_documents": documents,
+            "query_alerts": alerts,
+            "query_companies": companies,
+            "search_normativa": normativa,
+        }
+
+        return GraphDependencies(
+            classifier=self.deps.classifier,
+            tools=tools,
+            entity_resolver=entity_resolver,
+            store=self.store,  # T03: reemplazar por store segmentado por user_key
+            clock=self.clock,
+            max_tool_calls=self.settings.max_tool_calls,
+            recursion_limit=self.settings.recursion_limit,
+            answer_composer=self.deps.answer_composer,
+            tracer=self.tracer,
+        )
 
     def _degraded_turn(
         self,
@@ -638,6 +856,7 @@ def build_runtime(
     store: ThreadStore | None = None,
     clock: Clock | None = None,
     tracer: Any | None = None,
+    user_transport: Any | None = None,
 ) -> ChatRuntime:
     clock = clock or Clock()
     tracer = tracer if tracer is not None else tracer_from_settings(settings)
@@ -703,6 +922,7 @@ def build_runtime(
         odoo_client=client,
         clock=clock,
         tracer=tracer,
+        user_transport=user_transport,
     )
 
 

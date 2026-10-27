@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from contafis_assistant.main import create_app
 
-from .conftest import make_runtime, warning_codes
+from .conftest import make_runtime, warning_codes, DEFAULT_USER_TOKEN, USER_TOKEN_HEADER, mock_odoo_transport
 
 CHAT_BODY = {"message": "obligaciones de la compañía", "thread_id": "thread_abc"}
 
@@ -20,14 +20,16 @@ def _uuid4(value: str) -> uuid.UUID:
     return parsed
 
 
-def _client(settings):
-    runtime, scope, corpus, classifier, tool = make_runtime(settings)
-    return TestClient(create_app(settings, runtime=runtime)), classifier, tool
+def _client(settings, mock_odoo_transport):
+    runtime, scope, corpus, classifier, tool = make_runtime(settings, transport=mock_odoo_transport)
+    client = TestClient(create_app(settings, runtime=runtime))
+    client.headers.update({USER_TOKEN_HEADER: DEFAULT_USER_TOKEN})
+    return client, classifier, tool
 
 
-def test_invalid_json_returns_http_200_without_tools_or_llm(make_settings):
+def test_invalid_json_returns_http_200_without_tools_or_llm(make_settings, mock_odoo_transport):
     settings = make_settings()
-    client, classifier, tool = _client(settings)
+    client, classifier, tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post(
@@ -58,9 +60,9 @@ def test_invalid_json_returns_http_200_without_tools_or_llm(make_settings):
         {"message": "x" * 2001},
     ],
 )
-def test_invalid_message_returns_invalid_request(make_settings, payload):
+def test_invalid_message_returns_invalid_request(make_settings, mock_odoo_transport, payload):
     settings = make_settings()
-    client, classifier, tool = _client(settings)
+    client, classifier, tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post("/chat", json=payload)
@@ -76,11 +78,10 @@ def test_invalid_message_returns_invalid_request(make_settings, payload):
 
 @pytest.mark.parametrize("thread_id", ["bad id", "a/b", "x" * 65, 12, True])
 def test_invalid_thread_id_generates_uuid4_and_does_not_process(
-    make_settings,
-    thread_id,
+    make_settings, mock_odoo_transport, thread_id
 ):
     settings = make_settings()
-    client, classifier, tool = _client(settings)
+    client, classifier, tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post(
@@ -97,9 +98,9 @@ def test_invalid_thread_id_generates_uuid4_and_does_not_process(
     assert tool.calls == []
 
 
-def test_absent_thread_id_generates_uuid4_and_runs_normal_turn(make_settings):
+def test_absent_thread_id_generates_uuid4_and_runs_normal_turn(make_settings, mock_odoo_transport):
     settings = make_settings()
-    client, classifier, tool = _client(settings)
+    client, classifier, tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post("/chat", json={"message": "obligaciones"})
@@ -113,9 +114,9 @@ def test_absent_thread_id_generates_uuid4_and_runs_normal_turn(make_settings):
     assert "thread_context_unavailable" not in warning_codes(body)
 
 
-def test_valid_thread_id_is_preserved(make_settings):
+def test_valid_thread_id_is_preserved(make_settings, mock_odoo_transport):
     settings = make_settings()
-    client, _classifier, _tool = _client(settings)
+    client, _classifier, _tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post("/chat", json=CHAT_BODY)
@@ -124,9 +125,9 @@ def test_valid_thread_id_is_preserved(make_settings):
     assert response.json()["thread_id"] == "thread_abc"
 
 
-def test_response_contains_every_contract_field(make_settings):
+def test_response_contains_every_contract_field(make_settings, mock_odoo_transport):
     settings = make_settings()
-    client, _classifier, _tool = _client(settings)
+    client, _classifier, _tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post("/chat", json=CHAT_BODY)
@@ -160,10 +161,10 @@ def test_response_contains_every_contract_field(make_settings):
 
 
 def test_api_key_is_required_for_chat_and_health_when_secret_is_configured(
-    make_settings,
+    make_settings, mock_odoo_transport
 ):
     settings = make_settings(API_SHARED_SECRET="s3cr3t")
-    client, _classifier, _tool = _client(settings)
+    client, _classifier, _tool = _client(settings, mock_odoo_transport)
 
     with client:
         assert client.post("/chat", json=CHAT_BODY).status_code == 401
@@ -197,7 +198,7 @@ def test_api_key_is_required_for_chat_and_health_when_secret_is_configured(
         )
 
 
-def test_api_key_uses_constant_time_comparison(make_settings, monkeypatch):
+def test_api_key_uses_constant_time_comparison(make_settings, monkeypatch, mock_odoo_transport):
     from contafis_assistant.api import security
 
     calls: list[tuple[str, str]] = []
@@ -208,7 +209,7 @@ def test_api_key_uses_constant_time_comparison(make_settings, monkeypatch):
 
     monkeypatch.setattr(security, "compare_digest", spy)
     settings = make_settings(API_SHARED_SECRET="s3cr3t")
-    client, _classifier, _tool = _client(settings)
+    client, _classifier, _tool = _client(settings, mock_odoo_transport)
 
     with client:
         response = client.post(
@@ -221,7 +222,7 @@ def test_api_key_uses_constant_time_comparison(make_settings, monkeypatch):
     assert calls == [(b"s3cr3t", b"s3cr3t")]
 
 
-def test_no_comparison_without_configured_secret(make_settings, monkeypatch):
+def test_no_comparison_without_configured_secret(make_settings, monkeypatch, mock_odoo_transport):
     from contafis_assistant.api import security
 
     calls: list[tuple[str, str]] = []
@@ -232,7 +233,7 @@ def test_no_comparison_without_configured_secret(make_settings, monkeypatch):
 
     monkeypatch.setattr(security, "compare_digest", spy)
     settings = make_settings()
-    client, _classifier, _tool = _client(settings)
+    client, _classifier, _tool = _client(settings, mock_odoo_transport)
 
     with client:
         assert client.post("/chat", json=CHAT_BODY).status_code == 200

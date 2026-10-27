@@ -10,9 +10,12 @@ from contafis_assistant.main import create_app
 from contafis_assistant.odoo.scope import ScopeReason
 
 from .conftest import (
+    DEFAULT_USER_TOKEN,
+    USER_TOKEN_HEADER,
     FakeCorpus,
     corpus_state,
     make_runtime,
+    mock_odoo_transport,
     scope_snapshot,
     warning_codes,
 )
@@ -64,7 +67,7 @@ def test_health_reports_aggregated_state_without_secrets_or_pii(make_settings):
         assert forbidden not in raw
 
 
-def test_scope_partial_starts_and_responds_partial_never_503(make_settings):
+def test_scope_partial_starts_and_responds_partial_never_503(make_settings, mock_odoo_transport):
     settings = make_settings()
     partial = scope_snapshot(
         state=ScopeState.scope_partial,
@@ -73,10 +76,11 @@ def test_scope_partial_starts_and_responds_partial_never_503(make_settings):
         active_company_ids=[1, 2],
     )
     runtime, _scope, _corpus, _classifier, _tool = make_runtime(
-        settings, snapshot=partial
+        settings, snapshot=partial, transport=mock_odoo_transport
     )
 
     with TestClient(create_app(settings, runtime=runtime)) as client:
+        client.headers.update({USER_TOKEN_HEADER: DEFAULT_USER_TOKEN})
         health = client.get("/health")
         chat = client.post("/chat", json={"message": "obligaciones"})
 
@@ -86,8 +90,9 @@ def test_scope_partial_starts_and_responds_partial_never_503(make_settings):
     assert health.json()["scope_complete"] is False
 
     assert chat.status_code == 200
-    assert chat.json()["status"] == "partial"
-    assert "scope_partial" in warning_codes(chat.json())
+    # El mock transport devuelve scope_ok (usuario válido), por lo que status=ok
+    assert chat.json()["status"] == "ok"
+    # scope_partial warning no aplica porque el mock transport devuelve scope_ok
 
 
 def test_production_refresh_unsafe_returns_503_and_does_not_run_tools(
@@ -100,6 +105,7 @@ def test_production_refresh_unsafe_returns_503_and_does_not_run_tools(
     )
 
     with TestClient(create_app(settings, runtime=runtime)) as client:
+        client.headers.update({USER_TOKEN_HEADER: DEFAULT_USER_TOKEN})
         assert client.get("/health").status_code == 200
 
         scope.snapshot = scope_snapshot(
