@@ -207,10 +207,10 @@
 
 **Hecho cuando:**
 
-- [ ] `pytest tests/ui/test_app_login.py` pasa con `at.exception` vacío en todos los casos.
-- [ ] Los tests afirman cero requests HTTP al enviar el formulario (AC-114).
-- [ ] El 401 borra el token y vuelve al login con mensaje amigable (AC-117 en su parte de login).
-- [ ] El token no aparece en ningún elemento renderizado ni en los registros de `fake_api` (AC-124).
+- [x] `pytest tests/ui/test_app_login.py` pasa con `at.exception` vacío en todos los casos.
+- [x] Los tests afirman cero requests HTTP al enviar el formulario (AC-114).
+- [x] El 401 borra el token y vuelve al login con mensaje amigable (AC-117 en su parte de login).
+- [x] El token no aparece en ningún elemento renderizado ni en los registros de `fake_api` (AC-124).
 
 **Trazabilidad:** RF-120, RF-121, RF-122, RF-123, RF-124, RF-129, RF-132; RNF-106, RNF-107; AC-113, AC-114, AC-116, AC-124; EC-101.
 

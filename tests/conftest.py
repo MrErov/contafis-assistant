@@ -47,15 +47,43 @@ _ENV_PREFIXES = (
 _ENV_EXACT = {"APP_ENV"}
 
 
+def _is_loopback(address):
+    """Verifica si la dirección es loopback (127.0.0.1, ::1, localhost)."""
+    if not isinstance(address, tuple) or not address:
+        return False
+    host = str(address[0]).strip().lower().strip("[]")
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+class _LoopbackOnlySocket(socket.socket):
+    """Socket que solo permite conexiones loopback."""
+    def connect(self, address):
+        if not _is_loopback(address):
+            raise AssertionError("Network access is blocked in tests")
+        super().connect(address)
+
+    def connect_ex(self, address):
+        if not _is_loopback(address):
+            raise AssertionError("Network access is blocked in tests")
+        return super().connect_ex(address)
+
+    def bind(self, address):
+        if not _is_loopback(address):
+            raise AssertionError("Network access is blocked in tests")
+        super().bind(address)
+
+
+def _guarded_create_connection(address, *args, **kwargs):
+    if not _is_loopback(address):
+        raise AssertionError("Network access is blocked in tests")
+    return socket.create_connection(address, *args, **kwargs)
+
+
 @pytest.fixture(autouse=True)
 def block_network(monkeypatch):
-    """Bloquea cualquier intento de abrir sockets durante los tests."""
-
-    def _blocked(*_args, **_kwargs):
-        raise AssertionError("Network access is blocked in tests")
-
-    monkeypatch.setattr(socket, "socket", _blocked)
-    monkeypatch.setattr(socket, "create_connection", _blocked)
+    """Bloquea destinos externos sin romper el self-pipe de asyncio (socketpair)."""
+    monkeypatch.setattr(socket, "socket", _LoopbackOnlySocket)
+    monkeypatch.setattr(socket, "create_connection", _guarded_create_connection)
 
 
 @pytest.fixture(autouse=True)
