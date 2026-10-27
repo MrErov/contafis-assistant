@@ -70,7 +70,8 @@ def classify(message: str, *, llm: Any) -> ClassificationResult:
             else ClassificationDraft.model_validate(raw)
         )
     except Exception as exc:
-        # Log the actual error for debugging
+        # Log the actual error for debugging - print to console for Uvicorn visibility
+        print(f"CLASSIFIER ERROR: {exc}", flush=True)
         import logging
         logging.getLogger(__name__).error("Classifier LLM call failed: %s", exc, exc_info=True)
         return _failure(str(exc))

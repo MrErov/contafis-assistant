@@ -760,7 +760,10 @@ class _LazyOpenAIClassifier:
 
             self._structured_model = ChatOpenAI(
                 model=self._settings.llm_model,
+                api_key=self._settings.openai_api_key.get_secret_value(),
+                base_url=self._settings.openai_base_url,
                 timeout=self._settings.llm_timeout_seconds,
+                max_retries=2,
             ).with_structured_output(ClassificationDraft)
         return self._structured_model
 
@@ -770,7 +773,10 @@ class _LazyOpenAIClassifier:
 
             self._json_model = ChatOpenAI(
                 model=self._settings.llm_model,
+                api_key=self._settings.openai_api_key.get_secret_value(),
+                base_url=self._settings.openai_base_url,
                 timeout=self._settings.llm_timeout_seconds,
+                max_retries=2,
                 model_kwargs={"response_format": {"type": "json_object"}},
             )
         return self._json_model

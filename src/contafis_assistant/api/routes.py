@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import traceback
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from contafis_assistant.api.errors import (
     ServiceUnavailable,
@@ -54,12 +56,20 @@ async def chat(
         return invalid_request_response(decision)
 
     # Ejecutar el turno con el cliente del usuario (scope del usuario)
-    return runtime.chat_with_user(
-        user_ctx,
-        decision.message or "",
-        thread_id=None if decision.thread_id_generated else decision.thread_id,
-        request_id=str(uuid.uuid4()),
-    )
+    # Usar run_in_threadpool para no bloquear el event loop con código síncrono
+    try:
+        return await run_in_threadpool(
+            runtime.chat_with_user,
+            user_ctx,
+            decision.message or "",
+            thread_id=None if decision.thread_id_generated else decision.thread_id,
+            request_id=str(uuid.uuid4()),
+        )
+    except Exception as exc:
+        # Print full traceback for debugging classifier/LLM issues
+        print(f"CHAT ERROR: {exc}", flush=True)
+        traceback.print_exc()
+        raise
 
 
 @router.get("/scope", response_model=ScopeInfo)

@@ -12,7 +12,12 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from streamlit.testing.v1 import AppTest
+# Skip UI tests if streamlit is not available
+try:
+    from streamlit.testing.v1 import AppTest
+except ImportError:
+    AppTest = None
+    pytest.skip("streamlit not installed, skipping UI tests", allow_module_level=True)
 
 # ---------------------------------------------------------------------------
 # Entorno de prueba

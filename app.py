@@ -24,7 +24,7 @@ from contafis_assistant.domain.contracts import ChatResponse, ScopeInfo
 # ---------------------------------------------------------------------------
 
 ASSISTANT_API_URL = os.getenv("ASSISTANT_API_URL", "http://localhost:8000")
-UI_API_TIMEOUT_SECONDS = float(os.getenv("UI_API_TIMEOUT_SECONDS", "10"))
+UI_API_TIMEOUT_SECONDS = float(os.getenv("UI_API_TIMEOUT_SECONDS", "60"))
 API_SHARED_SECRET = os.getenv("API_SHARED_SECRET")
 
 
@@ -363,7 +363,6 @@ def main() -> None:
             "sources": [s.model_dump() for s in chat_resp.sources] if chat_resp.sources else [],
         }
         st.session_state["messages"].append(assistant_msg)
-        st.rerun()
 
 
 if __name__ == "__main__":

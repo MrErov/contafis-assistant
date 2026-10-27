@@ -16,7 +16,7 @@ def test_defaults_follow_rnf_003(settings_env):
     assert settings.odoo_protocol == "json2"
     assert settings.odoo_timeout_seconds == 15
     assert settings.odoo_readonly_attested is False
-    assert settings.llm_timeout_seconds == 30
+    assert settings.llm_timeout_seconds == 60
     assert settings.retrieval_timeout_seconds == 10
     assert settings.chroma_collection == "contafis_normativa_v1"
     assert settings.bm25_index_path == "data/bm25_index.json"

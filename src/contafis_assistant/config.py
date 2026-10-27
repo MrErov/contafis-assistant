@@ -40,9 +40,10 @@ class Settings(BaseSettings):
 
     # LLM y embeddings
     openai_api_key: SecretStr
+    openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str
     embedding_model: str
-    llm_timeout_seconds: float = 30
+    llm_timeout_seconds: float = 60
 
     # Corpus y retrieval
     chroma_path: str

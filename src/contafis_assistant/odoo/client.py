@@ -72,7 +72,7 @@ class OdooClient:
         url: str,
         database: str,
         api_key: str,
-        timeout: float = 15.0,
+        timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
         allowed_company_ids: Sequence[int] | None = None,
         uid: int | None = None,
