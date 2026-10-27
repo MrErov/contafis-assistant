@@ -995,9 +995,29 @@ def run() -> None:
 if __name__ == "__main__":
     run()
 
-# Variable app para que Uvicorn la encuentre directamente (ej: uvicorn contafis_assistant.main:app)
-# Se crea al importar el módulo; Settings() leerá .env gracias a model_config
-app = create_app()
+# Variable app lazy para que Uvicorn la encuentre (ej: uvicorn contafis_assistant.main:app)
+# Se inicializa bajo demanda para no requerir variables de entorno en import time (tests/CI)
+_app_instance = None
+
+
+def get_app():
+    """Retorna la instancia de la app, creándola si es necesario."""
+    global _app_instance
+    if _app_instance is None:
+        _app_instance = create_app()
+    return _app_instance
+
+
+# Exponer app como propiedad del módulo para uvicorn
+import sys as _sys
+
+class _AppModule(_sys.modules[__name__].__class__):
+    @property
+    def app(self):
+        return get_app()
+
+
+_sys.modules[__name__].__class__ = _AppModule
 
 
 __all__ = [
@@ -1007,5 +1027,5 @@ __all__ = [
     "create_app",
     "run",
     "wrap_untrusted",
-    "app",
+    "get_app",
 ]
