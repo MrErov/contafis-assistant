@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 
 from contafis_assistant.config import Settings
@@ -211,6 +212,110 @@ class FakeOdooClient:
         self.closed = True
 
 
+class MockOdooTransport:
+    """Transporte mock para tests de aceptación que simula Odoo JSON/2 con scope check válido."""
+
+    def __init__(self):
+        self.requests = []
+        self.close_count = 0
+        self.scope_check_count = 0
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+
+        # Detectar si es un scope_check por URL (método en URL, no en body)
+        url = str(request.url)
+        is_scope_check = "context_get" in url or "has_group" in url or ("res.company" in url and "search_read" in url and self.scope_check_count < 5)
+        
+        if is_scope_check:
+            self.scope_check_count += 1
+            call_in_scope = self.scope_check_count
+        else:
+            # Tool calls
+            call_in_scope = 0
+
+        # Secuencia del scope_check:
+        # 1. context_get -> uid + allowed_company_ids
+        # 2. has_group (base.group_system) -> False
+        # 3. has_group (base.group_erp_manager) -> False
+        # 4. has_group (base.group_user) -> True
+        # 5. search_read (res.company) -> companies
+        if call_in_scope == 1:
+            return httpx.Response(200, json={"uid": 7, "allowed_company_ids": [1, 2]})
+        elif 2 <= call_in_scope <= 4:
+            return httpx.Response(200, json=False if call_in_scope < 4 else True)
+        elif call_in_scope == 5:
+            return httpx.Response(200, json=[{"id": 1, "name": "Test Company", "company_archived": False}])
+
+        # Tool calls - detectar modelo por URL
+        if "l10n.ve.obligation" in url and "search_read" in url:
+            # Retornar obligación de prueba
+            return httpx.Response(200, json=[{
+                "id": 1,
+                "client_id": [1, "Test Client"],
+                "company_id": [1, "Test Company"],
+                "obligation_type_id": [1, "IVA mensual"],
+                "tax_type": "IVA",
+                "period": "2026-01",
+                "due_date": "2026-01-20",
+                "state": "pending",
+                "effective_state": "pending",
+            }])
+        elif "res.company" in url and "search_read" in url:
+            # Compañías (tool call después del scope_check)
+            return httpx.Response(200, json=[{"id": 1, "name": "Test Company", "company_archived": False}])
+        elif "res.partner" in url and "search_read" in url:
+            # Clientes
+            return httpx.Response(200, json=[{
+                "id": 1,
+                "name": "Test Client",
+                "rif": "J-12345678-9",
+                "company_id": [1, "Test Company"],
+                "compliance_status": "compliant",
+            }])
+        elif "l10n.ve.document" in url and "search_read" in url:
+            # Documentos
+            return httpx.Response(200, json=[{
+                "id": 1,
+                "document_type_id": [1, "Factura"],
+                "client_id": [1, "Test Client"],
+                "company_id": [1, "Test Company"],
+                "state": "valid",
+                "stored_state": "valid",
+                "expiry_date": "2026-12-31",
+            }])
+        elif "l10n.ve.alert" in url and "search_read" in url:
+            # Alertas
+            return httpx.Response(200, json=[{
+                "id": 1,
+                "alert_type": "overdue",
+                "state": "pending",
+                "date": "2026-01-15T10:00:00",
+                "client_id": [1, "Test Client"],
+                "company_id": [1, "Test Company"],
+            }])
+
+        # Por defecto array vacío
+        return httpx.Response(200, json=[])
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        return self.handle_request(request)
+
+    def close(self) -> None:
+        self.close_count += 1
+
+
+@pytest.fixture
+def mock_odoo_transport():
+    """Fixture que provee un transporte mock para Odoo."""
+    return MockOdooTransport()
+
+
+def _make_mock_transport():
+    """Factory que crea una nueva instancia de MockOdooTransport para cada test."""
+    return MockOdooTransport()
+
+
 def make_runtime(
     settings: Settings,
     *,
@@ -221,6 +326,7 @@ def make_runtime(
     tools: dict | None = None,
     store: ThreadStore | None = None,
     odoo_client: FakeOdooClient | None = None,
+    transport: any | None = None,
 ):
     from contafis_assistant.main import ChatRuntime
 
@@ -236,6 +342,8 @@ def make_runtime(
         store=store,
         scope_snapshot=snapshot,
     )
+    # Crear nuevo transporte mock para cada test si no se provee uno
+    effective_transport = transport if transport is not None else _make_mock_transport()
     runtime = ChatRuntime(
         settings=settings,
         store=store,
@@ -243,5 +351,6 @@ def make_runtime(
         scope=scope,
         corpus=corpus,
         odoo_client=odoo_client,
+        user_transport=effective_transport,
     )
     return runtime, scope, corpus, classifier, tool
