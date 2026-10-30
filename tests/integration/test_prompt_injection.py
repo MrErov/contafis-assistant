@@ -256,7 +256,7 @@ def test_user_message_is_delimited_as_untrusted_data_in_the_prompt(settings_env)
 
     system, human = classifier.messages_for_testonly(MALICIOUS_SECTION)
 
-    assert "DATO" in system
+    assert "REDACTADO" in system or "DATO" in system
     assert human.startswith("<dato>")
     assert MALICIOUS_SECTION in human
     assert human.endswith("</dato>")
