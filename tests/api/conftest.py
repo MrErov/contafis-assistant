@@ -7,6 +7,9 @@ que es lo que usa TestClient/anyio, y se siguen bloqueando destinos externos.
 
 from __future__ import annotations
 
+import base64
+import io
+import json
 import socket
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -15,9 +18,11 @@ from typing import Any
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 
 from contafis_assistant.config import Settings
 from contafis_assistant.domain.contracts import ObligationItem, ObligationsResult, Warning
+from contafis_assistant.domain.digitize import ExtractedInvoice
 from contafis_assistant.domain.enums import (
     CorpusStatus,
     Intent,
@@ -392,3 +397,192 @@ def scope_warning(code: str, message: str = "warning") -> Warning:
         message=message,
         source=WarningSource.system,
     )
+
+
+# ============================================================================
+# Mocks y fixtures para Spec 006 - Digitize
+# ============================================================================
+
+def make_fake_invoice_image(document_type: str = "factura_z") -> str:
+    """Genera imagen sintética PIL y retorna base64."""
+    img = Image.new('RGB', (800, 600), color='white')
+    draw = ImageDraw.Draw(img)
+    text = f"FACTURA {document_type.upper()}\nRIF J-12345678-9\nTOTAL 119.00"
+    draw.text((50, 50), text, fill='black')
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG')
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def mock_nim_vision_success(
+    document_type: str = "factura_z",
+    confidence: float = 0.92,
+    extracted: dict | None = None,
+) -> callable:
+    """Mock handler para NIM vision exitoso."""
+    if extracted is None:
+        extracted = {
+            "supplier_name": "Distribuidora El Sol C.A.",
+            "supplier_rif": "J-12345678-9",
+            "invoice_number": "001-001-00001234",
+            "control_number": "ABC1234567890",
+            "invoice_date": "2026-10-15",
+            "due_date": "2026-11-15",
+            "currency": "USD",
+            "subtotal": 100.00,
+            "iva_rate": 0.16,
+            "iva_amount": 16.00,
+            "igtf_rate": 0.03,
+            "igtf_amount": 3.00,
+            "total": 119.00,
+            "lines": [{"description": "Servicios", "quantity": 1, "unit_price": 100.00, "total": 100.00}],
+            "credit_note_ref": None,
+            "debit_note_ref": None,
+        }
+    
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Detectar si es llamada a chat/completions (NIM vision)
+        url = str(request.url)
+        if "chat/completions" in url:
+            return httpx.Response(200, json={
+                "choices": [{
+                    "message": {
+                        "content": json.dumps({
+                            "document_type": document_type,
+                            "confidence": confidence,
+                            "extracted": extracted
+                        }, ensure_ascii=False)
+                    }
+                }]
+            })
+        # Para otras llamadas (scope_check, etc.) usar mock Odoo por defecto
+        return httpx.Response(200, json=[])
+    return handler
+
+
+def mock_nim_vision_low_confidence() -> callable:
+    """Mock handler para NIM vision con baja confianza."""
+    extracted = {
+        "supplier_name": None,
+        "supplier_rif": None,
+        "invoice_number": None,
+        "control_number": None,
+        "invoice_date": None,
+        "due_date": None,
+        "currency": "VES",
+        "subtotal": None,
+        "iva_rate": None,
+        "iva_amount": None,
+        "igtf_rate": None,
+        "igtf_amount": None,
+        "total": None,
+        "lines": [],
+    }
+    return mock_nim_vision_success("factura_z", 0.25, extracted)
+
+
+def mock_nim_vision_timeout() -> callable:
+    """Mock handler que simula timeout."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "chat/completions" in url:
+            raise httpx.ReadTimeout("timeout", request=request)
+        return httpx.Response(200, json=[])
+    return handler
+
+
+def mock_nim_vision_invalid_json() -> callable:
+    """Mock handler que devuelve JSON inválido."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "chat/completions" in url:
+            return httpx.Response(200, json={
+                "choices": [{
+                    "message": {
+                        "content": "esto no es json válido {{{"
+                    }
+                }]
+            })
+        return httpx.Response(200, json=[])
+    return handler
+
+
+def mock_nim_vision_nota_credito() -> callable:
+    """Mock handler para nota de crédito."""
+    extracted = {
+        "supplier_name": "Distribuidora El Sol C.A.",
+        "supplier_rif": "J-12345678-9",
+        "invoice_number": "001-001-00001235",
+        "control_number": "DEF0987654321",
+        "invoice_date": "2026-10-20",
+        "due_date": None,
+        "currency": "USD",
+        "subtotal": -50.00,
+        "iva_rate": 0.16,
+        "iva_amount": -8.00,
+        "igtf_rate": 0.03,
+        "igtf_amount": -1.50,
+        "total": -59.50,
+        "lines": [{"description": "Devolución servicio sep 2026", "quantity": 1, "unit_price": -50.00, "total": -50.00}],
+        "credit_note_ref": "001-001-00001234",
+        "debit_note_ref": None,
+    }
+    return mock_nim_vision_success("nota_credito", 0.90, extracted)
+
+
+def mock_nim_vision_nota_debito() -> callable:
+    """Mock handler para nota de débito."""
+    extracted = {
+        "supplier_name": "Distribuidora El Sol C.A.",
+        "supplier_rif": "J-12345678-9",
+        "invoice_number": "001-001-00001236",
+        "control_number": "GHI5555555555",
+        "invoice_date": "2026-10-25",
+        "due_date": "2026-11-25",
+        "currency": "USD",
+        "subtotal": 25.00,
+        "iva_rate": 0.16,
+        "iva_amount": 4.00,
+        "igtf_rate": 0.03,
+        "igtf_amount": 0.75,
+        "total": 29.75,
+        "lines": [{"description": "Ajuste por diferencia de tasa", "quantity": 1, "unit_price": 25.00, "total": 25.00}],
+        "credit_note_ref": None,
+        "debit_note_ref": "001-001-00001234",
+    }
+    return mock_nim_vision_success("nota_debito", 0.88, extracted)
+
+
+def mock_nim_vision_invalid_rif() -> callable:
+    """Mock handler con RIF inválido."""
+    extracted = {
+        "supplier_name": "Test Proveedor",
+        "supplier_rif": "J-12345678-0",  # checksum inválido
+        "invoice_number": "001",
+        "control_number": "CTRL",
+        "invoice_date": "2026-10-15",
+        "currency": "VES",
+        "subtotal": 100.00,
+        "iva_amount": 16.00,
+        "total": 116.00,
+        "lines": [],
+    }
+    return mock_nim_vision_success("factura_z", 0.85, extracted)
+
+
+def mock_nim_vision_amount_mismatch() -> callable:
+    """Mock handler con montos incoherentes."""
+    extracted = {
+        "supplier_name": "Test Proveedor",
+        "supplier_rif": "J-12345678-9",
+        "invoice_number": "001",
+        "control_number": "CTRL",
+        "invoice_date": "2026-10-15",
+        "currency": "VES",
+        "subtotal": 100.00,
+        "iva_amount": 16.00,
+        "igtf_amount": 3.00,
+        "total": 120.00,  # incoherente: debería ser 119.00
+        "lines": [],
+    }
+    return mock_nim_vision_success("factura_z", 0.90, extracted)

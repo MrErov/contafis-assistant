@@ -1,4 +1,4 @@
-"""Endpoints `/chat`, `/scope` y `/health` con autenticación por token de usuario."""
+"""Endpoints `/chat`, `/scope`, `/health` y `/digitize` con autenticación por sesión."""
 
 from __future__ import annotations
 
@@ -7,16 +7,18 @@ import traceback
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
+from contafis_assistant.api.digitize import get_digitize_service, NIMError, NIMTimeoutError, NIMParsingError
 from contafis_assistant.api.errors import (
     ServiceUnavailable,
     invalid_request_response,
 )
-from contafis_assistant.api.user_auth import UserContext, get_user_context
+from contafis_assistant.api.user_auth import UserContext, get_user_context_from_session
 from contafis_assistant.domain.contracts import ChatResponse, ScopeInfo
+from contafis_assistant.domain.digitize import DigitizeRequest, DigitizeResponse
 from contafis_assistant.domain.request import validate_chat_request
 
 router = APIRouter()
@@ -41,7 +43,7 @@ def _parse_json(raw: bytes) -> Any:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
-    user_ctx: UserContext = Depends(get_user_context),
+    user_ctx: UserContext = Depends(get_user_context_from_session),
 ) -> ChatResponse:
     runtime = _runtime(request)
     raw_body = await request.body()
@@ -73,7 +75,7 @@ async def chat(
 
 
 @router.get("/scope", response_model=ScopeInfo)
-def scope(user_ctx: UserContext = Depends(get_user_context)) -> ScopeInfo:
+def scope(user_ctx: UserContext = Depends(get_user_context_from_session)) -> ScopeInfo:
     """Devuelve el alcance del usuario autenticado (compañías visibles, estado de scope)."""
     from contafis_assistant.domain.enums import ScopeState
 
@@ -103,6 +105,32 @@ def health(request: Request) -> JSONResponse:
             content={"detail": "service_unavailable"},
         )
     return JSONResponse(status_code=status_code, content=payload)
+
+
+@router.post("/digitize", response_model=DigitizeResponse)
+async def digitize(
+    request: Request,
+    digitize_request: DigitizeRequest,
+    user_ctx: UserContext = Depends(get_user_context_from_session),
+) -> DigitizeResponse:
+    """Digitaliza factura venezolana desde imagen base64 usando LLM Vision (NIM).
+    
+    Requiere autenticación por X-Odoo-Session o X-User-Token (legacy).
+    """
+    runtime = _runtime(request)
+    service = get_digitize_service(runtime.settings)
+    
+    try:
+        return await run_in_threadpool(service.digitize, digitize_request)
+    except NIMTimeoutError:
+        raise HTTPException(status_code=503, detail="service_unavailable") from None
+    except NIMParsingError:
+        raise HTTPException(status_code=503, detail="service_unavailable") from None
+    except NIMError:
+        raise HTTPException(status_code=503, detail="service_unavailable") from None
+    except ValueError as e:
+        # Errores de validación de request (base64 inválido, etc.)
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 __all__ = ["router"]

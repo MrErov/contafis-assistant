@@ -71,15 +71,19 @@ class OdooClient:
         *,
         url: str,
         database: str,
-        api_key: str,
+        api_key: str | None = None,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
         allowed_company_ids: Sequence[int] | None = None,
         uid: int | None = None,
+        session_id: str | None = None,
     ) -> None:
+        if api_key is None and session_id is None:
+            raise ValueError("Se requiere api_key o session_id")
         self._url = url.rstrip("/")
         self._database = database
         self._api_key = api_key
+        self._session_id = session_id
         self._timeout = timeout
         self._allowed_company_ids = [int(value) for value in (allowed_company_ids or [])]
         self.uid = uid
@@ -234,13 +238,17 @@ class OdooClient:
     # ------------------------------------------------------------------
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._api_key}",
+        headers = {
             "X-Odoo-Database": self._database,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "contafis-assistant",
         }
+        if self._session_id:
+            headers["Cookie"] = f"session_id={self._session_id}"
+        else:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     def _build_body(
         self,

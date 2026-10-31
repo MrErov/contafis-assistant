@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     memory_max_turns: int = 20
     memory_max_threads: int = 500
     scope_check_ttl_seconds: int = 300
+    session_max_age_hours: int = Field(default=24, ge=1)
+
+    # Digitize (Spec 006)
+    digitize_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
+    digitize_max_image_mb: int = Field(default=5, ge=1, le=20)
 
     @field_validator("api_shared_secret", mode="before")
     @classmethod
