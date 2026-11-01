@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -846,6 +847,11 @@ def build_runtime(
     tracer = tracer if tracer is not None else tracer_from_settings(settings)
     if tracing_enabled(settings):
         os.environ.update(hide_content_env(settings))
+    # Transporte compartido por las sesiones de usuario: debe existir siempre,
+    # porque ``get_user_context_from_session`` lo usa para validar el
+    # ``session_id`` contra Odoo antes de construir el cliente por request.
+    if user_transport is None:
+        user_transport = httpx.HTTPTransport()
     client = odoo_client
     if client is None:
         client = OdooClient(

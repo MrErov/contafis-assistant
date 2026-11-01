@@ -282,10 +282,10 @@ def test_validate_session_timeout():
 
 
 def test_validate_session_missing_last_activity():
-    """Respuesta sin last_activity → se trata como expirada (seguridad)."""
+    """Odoo 19 no envía last_activity: la sesión se acepta (uid + user_companies)."""
     settings = make_settings()
     clock = FixedClock(datetime.now(timezone.utc))
-    
+
     def handler(request, attempt):
         if "/web/session/get_session_info" in str(request.url):
             return httpx.Response(200, json={
@@ -293,23 +293,53 @@ def test_validate_session_missing_last_activity():
                 "id": 1,
                 "result": {
                     "uid": 7,
-                    "user_context": {"allowed_company_ids": [1], "company_id": 1},
-                    # sin last_activity
+                    "user_companies": {
+                        "current_company": 3,
+                        "allowed_companies": {
+                            "3": {"id": 3, "name": "Empresa 3"},
+                            "5": {"id": 5, "name": "Empresa 5"},
+                        },
+                    },
+                    # sin last_activity (Odoo 19)
                 }
             })
         return httpx.Response(200, json={})
-    
+
     transport = MockTransport(handler=handler)
 
-    with pytest.raises(OdooAuthError) as exc_info:
-        _validate_session(
-            session_id="no-last-activity",
-            settings=settings,
-            clock=clock,
-            transport=transport,
-        )
+    result = _validate_session(
+        session_id="no-last-activity",
+        settings=settings,
+        clock=clock,
+        transport=transport,
+    )
 
-    assert "expirada" in str(exc_info.value).lower()
+    assert result["uid"] == 7
+    assert result["company_id"] == 3
+    assert result["allowed_company_ids"] == [3, 5]
+    assert result["session_id"] == "no-last-activity"
+
+    # Variante Odoo 19: ``user_companies`` como lista (ids o dicts con id).
+    transport_list = MockTransport(responses=[httpx.Response(200, json={
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "uid": 9,
+            "user_companies": [{"id": 4, "name": "A"}, 6],
+            # sin last_activity
+        },
+    })])
+
+    result_list = _validate_session(
+        session_id="list-companies",
+        settings=settings,
+        clock=clock,
+        transport=transport_list,
+    )
+
+    assert result_list["uid"] == 9
+    assert result_list["company_id"] == 4
+    assert result_list["allowed_company_ids"] == [4, 6]
 
 
 # ============================================================================

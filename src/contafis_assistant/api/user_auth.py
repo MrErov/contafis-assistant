@@ -15,6 +15,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
 from typing import Annotated, Generator, Literal
 
 import httpx
@@ -78,11 +79,93 @@ def _is_session_expired(last_activity_str: str, max_age_hours: int, clock: Clock
     return age > timedelta(hours=max_age_hours)
 
 
+def _as_company_id(value: object) -> int | None:
+    """Convierte un id de compañía (int, string numérico o dict con ``id``)."""
+    if isinstance(value, Mapping):
+        value = value.get("id")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _company_id_list(values: object) -> list[int]:
+    """Normaliza una colección heterogénea de compañías a una lista de ids.
+
+    Acepta ``int``/``str``, listas de ids, listas de dicts con ``id`` y dicts
+    (tanto indexados por id como dicts de compañía).
+    """
+    if values is None:
+        return []
+
+    if isinstance(values, Mapping):
+        # Caso Odoo: {"1": {...}, "2": {...}} (claves = id) o dicts donde el id
+        # vive en el valor.
+        result = _company_id_list(list(values.keys()))
+        if result:
+            return result
+        return _company_id_list(list(values.values()))
+
+    if not isinstance(values, (list, tuple, set)):
+        values = [values]
+
+    result: list[int] = []
+    for item in values:
+        if isinstance(item, Mapping):
+            item = item.get("id")
+        company_id = _as_company_id(item)
+        if company_id is not None and company_id not in result:
+            result.append(company_id)
+    return result
+
+
+def _extract_companies(result: Mapping[str, object]) -> tuple[int | None, list[int]]:
+    """Extrae ``(company_id, allowed_company_ids)`` del payload de sesión.
+
+    Odoo 19 devuelve ``user_companies`` como dict
+    (``current_company`` + ``allowed_companies``) o como lista de ids. Si no
+    viene, se mantiene el fallback legacy a ``user_context``.
+    """
+    company_id: int | None = None
+    allowed_company_ids: list[int] = []
+
+    user_companies = result.get("user_companies")
+    if isinstance(user_companies, Mapping):
+        company_id = _as_company_id(user_companies.get("current_company"))
+        allowed_company_ids = _company_id_list(
+            user_companies.get("allowed_companies")
+        )
+    elif user_companies is not None:
+        allowed_company_ids = _company_id_list(user_companies)
+
+    user_context = result.get("user_context")
+    if isinstance(user_context, Mapping):
+        if company_id is None:
+            company_id = _as_company_id(user_context.get("company_id"))
+        if not allowed_company_ids:
+            allowed_company_ids = _company_id_list(
+                user_context.get("allowed_company_ids")
+            )
+
+    if company_id is None and allowed_company_ids:
+        company_id = allowed_company_ids[0]
+    if company_id is not None and company_id not in allowed_company_ids:
+        allowed_company_ids.insert(0, company_id)
+
+    return company_id, allowed_company_ids
+
+
 def _validate_session(
     session_id: str,
     settings: Settings,
     clock: Clock,
-    transport,
+    transport: httpx.BaseTransport | None = None,
 ) -> dict:
     """Valida session_id contra /web/session/get_session_info de Odoo.
 
@@ -102,14 +185,24 @@ def _validate_session(
         "Cookie": f"session_id={session_id}",
     }
 
+    if transport is None:
+        transport = httpx.HTTPTransport()
+
     try:
         response = transport.handle_request(
             httpx.Request("POST", url, headers=headers, json=body)
         )
+        # ``HTTPTransport.handle_request`` devuelve la respuesta con el stream
+        # sin consumir; leerla evita ``httpx.ResponseNotRead`` al parsear JSON.
+        response.read()
     except httpx.TimeoutException as exc:
         raise OdooTransientError("timeout al validar sesión en Odoo") from exc
     except httpx.TransportError as exc:
         raise OdooTransientError("error de transporte al validar sesión en Odoo") from exc
+    except httpx.HTTPError as exc:
+        raise OdooTransientError(
+            "error al leer la respuesta de sesión de Odoo"
+        ) from exc
 
     status = response.status_code
     try:
@@ -139,15 +232,16 @@ def _validate_session(
     if uid is None:
         raise OdooAuthError("Sesión sin uid (inválida o expirada)")
 
-    user_context = result.get("user_context", {})
-    company_id = user_context.get("company_id")
-    allowed_company_ids = user_context.get("allowed_company_ids", [])
+    # Odoo 19 entrega ``user_companies``; versiones previas usan
+    # ``company_id``/``allowed_company_ids`` dentro de ``user_context``.
+    company_id, allowed_company_ids = _extract_companies(result)
 
+    # ``last_activity`` es opcional: Odoo 19 ya no lo devuelve. Si viene, se
+    # sigue validando la expiración de 24h por seguridad.
     last_activity = result.get("last_activity")
-    if last_activity is None:
-        raise OdooAuthError("Sesión sin last_activity (expirada)")
-
-    if _is_session_expired(last_activity, settings.session_max_age_hours, clock):
+    if last_activity is not None and _is_session_expired(
+        last_activity, settings.session_max_age_hours, clock
+    ):
         raise OdooAuthError(f"Sesión expirada ({settings.session_max_age_hours}h)")
 
     return {
