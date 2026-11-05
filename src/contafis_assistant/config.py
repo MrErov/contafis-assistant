@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     langsmith_tracing: bool | None = None
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "contafis-assistant"
+    langsmith_endpoint: str | None = None
+    langsmith_hide_content: bool = True
 
     # API
     api_host: str = "127.0.0.1"

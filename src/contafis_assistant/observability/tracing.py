@@ -132,9 +132,50 @@ def tracer_from_settings(
 
 
 def hide_content_env(settings: Any | None = None) -> dict[str, str]:
-    """Variables para ocultar entradas y salidas en LangSmith."""
+    """Variables para ocultar entradas y salidas en LangSmith.
 
+    `LANGSMITH_HIDE_CONTENT=false` permite ver el contenido en desarrollo; el
+    valor por defecto (True) mantiene la política de RF-052/RF-078.
+    """
+
+    if settings is not None:
+        hide = getattr(settings, "langsmith_hide_content", True)
+        if not hide:
+            return {}
     return dict(HIDE_CONTENT_ENV)
+
+
+def langsmith_env(settings: Any) -> dict[str, str]:
+    """Copia la configuración de tracing a `os.environ`.
+
+    ``pydantic-settings`` lee el ``.env`` pero no lo publica en ``os.environ``;
+    LangChain/LangGraph y ``langsmith.Client`` sólo se auto-instrumentan leyendo
+    el entorno. Sin esta copia el servidor no genera ninguna traza aunque
+    ``LANGSMITH_TRACING=true`` esté en el ``.env``.
+    """
+
+    if not tracing_enabled(settings):
+        return {}
+    env = {
+        "LANGSMITH_TRACING": "true",
+        "LANGSMITH_PROJECT": str(
+            getattr(settings, "langsmith_project", DEFAULT_PROJECT)
+        ),
+    }
+    secret = getattr(settings, "langsmith_api_key", None)
+    if secret is not None:
+        value = (
+            secret.get_secret_value()
+            if hasattr(secret, "get_secret_value")
+            else str(secret)
+        )
+        if value:
+            env["LANGSMITH_API_KEY"] = value
+    endpoint = getattr(settings, "langsmith_endpoint", None)
+    if endpoint:
+        env["LANGSMITH_ENDPOINT"] = str(endpoint)
+    env.update(hide_content_env(settings))
+    return env
 
 
 def record_turn(tracer: Tracer | None, event: TraceEvent) -> None:
@@ -180,6 +221,7 @@ __all__ = [
     "TraceSink",
     "Tracer",
     "hide_content_env",
+    "langsmith_env",
     "record_turn",
     "trace_turn_state",
     "tracer_from_settings",

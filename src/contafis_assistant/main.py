@@ -45,7 +45,7 @@ from contafis_assistant.graph.state import (
 from contafis_assistant.memory.threads import ThreadStore
 from contafis_assistant.observability.redaction import wrap_untrusted
 from contafis_assistant.observability.tracing import (
-    hide_content_env,
+    langsmith_env,
     tracer_from_settings,
     tracing_enabled,
 )
@@ -882,9 +882,12 @@ def build_runtime(
     user_transport: Any | None = None,
 ) -> ChatRuntime:
     clock = clock or Clock()
-    tracer = tracer if tracer is not None else tracer_from_settings(settings)
+    # LangChain/LangGraph y ``langsmith.Client`` leen ``os.environ``, no
+    # ``Settings``: hay que exportar antes de crear el tracer para que el
+    # cliente nazca con la API key y la política de ocultamiento correctas.
     if tracing_enabled(settings):
-        os.environ.update(hide_content_env(settings))
+        os.environ.update(langsmith_env(settings))
+    tracer = tracer if tracer is not None else tracer_from_settings(settings)
     # Transporte compartido por las sesiones de usuario: debe existir siempre,
     # porque ``get_user_context_from_session`` lo usa para validar el
     # ``session_id`` contra Odoo antes de construir el cliente por request.

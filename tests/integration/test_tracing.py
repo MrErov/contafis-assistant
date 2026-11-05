@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
+from contafis_assistant import main as main_module
 from contafis_assistant.config import Settings
 from contafis_assistant.domain.contracts import EntityRef, ObligationsResult
 from contafis_assistant.domain.enums import EntityType, Intent, Status
@@ -20,6 +22,7 @@ from contafis_assistant.observability.tracing import (
     NullTracer,
     TraceEvent,
     hide_content_env,
+    langsmith_env,
     trace_turn_state,
     tracer_from_settings,
     tracing_enabled,
@@ -256,3 +259,103 @@ def test_trace_turn_state_emits_from_turn_state():
     assert payload["status"] == "ok"
     assert payload["tools_used"] == ["query_obligations"]
     assert payload["latency_ms"] == 3
+
+
+# --- exportación de la configuración a os.environ --------------------------
+#
+# `pydantic-settings` lee el `.env` pero no publica nada en `os.environ`.
+# LangChain/LangGraph y `langsmith.Client` sólo se auto-instrumentan leyendo el
+# entorno, por eso el servidor no generaba trazas aunque `LANGSMITH_TRACING=true`
+# estuviera en el `.env`.
+
+
+def test_langsmith_env_exports_tracing_project_and_key(settings_env):
+    settings_env.setenv("APP_ENV", "development")
+    settings_env.setenv("LANGSMITH_API_KEY", "ls-key-de-prueba")
+    settings_env.setenv("LANGSMITH_ENDPOINT", "https://smith.example.com")
+    settings = Settings(_env_file=None)
+
+    env = langsmith_env(settings)
+
+    assert env["LANGSMITH_TRACING"] == "true"
+    assert env["LANGSMITH_PROJECT"] == settings.langsmith_project
+    assert env["LANGSMITH_API_KEY"] == "ls-key-de-prueba"
+    assert env["LANGSMITH_ENDPOINT"] == "https://smith.example.com"
+
+
+def test_langsmith_env_is_empty_when_tracing_is_disabled(settings_env):
+    settings = Settings(_env_file=None)
+
+    assert settings.app_env == "test"
+    assert langsmith_env(settings) == {}
+
+
+def test_langsmith_env_hides_content_by_default(settings_env):
+    settings_env.setenv("APP_ENV", "development")
+    settings = Settings(_env_file=None)
+
+    env = langsmith_env(settings)
+
+    assert env["LANGSMITH_HIDE_INPUTS"] == "true"
+    assert env["LANGSMITH_HIDE_OUTPUTS"] == "true"
+
+
+def test_langsmith_env_can_show_content_when_hiding_is_disabled(settings_env):
+    settings_env.setenv("APP_ENV", "development")
+    settings = Settings(_env_file=None, langsmith_hide_content=False)
+
+    env = langsmith_env(settings)
+
+    assert "LANGSMITH_HIDE_INPUTS" not in env
+    assert "LANGSMITH_HIDE_OUTPUTS" not in env
+    assert env["LANGSMITH_TRACING"] == "true"
+
+
+def test_hide_content_env_respects_disabled_setting(settings_env):
+    settings_env.setenv("APP_ENV", "development")
+    settings = Settings(_env_file=None, langsmith_hide_content=False)
+
+    assert hide_content_env(settings) == {}
+
+
+def test_build_runtime_exports_langsmith_env_before_creating_the_tracer(settings_env):
+    settings_env.setenv("APP_ENV", "development")
+    settings_env.setenv("LANGSMITH_API_KEY", "ls-key-de-prueba")
+    for key in (
+        "LANGSMITH_TRACING",
+        "LANGSMITH_PROJECT",
+        "LANGSMITH_HIDE_INPUTS",
+        "LANGSMITH_HIDE_OUTPUTS",
+    ):
+        settings_env.delenv(key, raising=False)
+    settings = Settings(_env_file=None)
+
+    seen: dict[str, str | None] = {}
+
+    def fake_tracer_from_settings(_settings, **_kwargs):
+        seen["tracing"] = os.environ.get("LANGSMITH_TRACING")
+        seen["project"] = os.environ.get("LANGSMITH_PROJECT")
+        seen["api_key"] = os.environ.get("LANGSMITH_API_KEY")
+        seen["hide_inputs"] = os.environ.get("LANGSMITH_HIDE_INPUTS")
+        return NullTracer()
+
+    settings_env.setattr(
+        main_module, "tracer_from_settings", fake_tracer_from_settings
+    )
+
+    main_module.build_runtime(
+        settings,
+        odoo_client=object(),
+        scope=object(),
+        corpus=object(),
+        classifier=lambda _message: None,
+        tools={},
+        entity_resolver=lambda _mention: None,
+    )
+
+    assert seen == {
+        "tracing": "true",
+        "project": settings.langsmith_project,
+        "api_key": "ls-key-de-prueba",
+        "hide_inputs": "true",
+    }
