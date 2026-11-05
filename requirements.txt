@@ -2,6 +2,7 @@
 langchain
 langchain-community
 langchain-openai
+langchain-nvidia-ai-endpoints
 langgraph
 langsmith
 python-dotenv

@@ -48,7 +48,8 @@ class RagRetriever:
         corpus: Any,
         *,
         dense_search: Callable[[str, int], list[DenseHit]] | None = None,
-        embedder: Callable[[list[str]], list[list[float]]] | None = None,
+        embed_query: Callable[[str], list[float]] | None = None,
+        embed_documents: Callable[[list[str]], list[list[float]]] | None = None,
         dense_top_k: int = 10,
         bm25_top_k: int = 10,
         final_top_k: int = 5,
@@ -58,7 +59,11 @@ class RagRetriever:
     ) -> None:
         self.corpus = corpus
         self._dense_search = dense_search
-        self._embedder = embedder
+        # La consulta debe ir por la ruta `query` (input_type=query) y los
+        # pasajes de la ingesta por la ruta `passage`. Mezclarlas degrada el
+        # ranking, por eso son dos callables distintos y no uno solo.
+        self._embed_query = embed_query
+        self._embed_documents = embed_documents
         self.dense_top_k = dense_top_k
         self.bm25_top_k = bm25_top_k
         self.final_top_k = final_top_k
@@ -74,12 +79,11 @@ class RagRetriever:
             return list(self._dense_search(query, self.dense_top_k)), []
 
         collection = getattr(self.corpus, "collection", None)
-        if collection is None or self._embedder is None:
+        if collection is None or self._embed_query is None:
             return [], []
 
         try:
-            vectors = self._embedder([query])
-            embedding = vectors[0]
+            embedding = list(self._embed_query(query))
             raw = collection.query(
                 query_embeddings=[embedding],
                 n_results=self.dense_top_k,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -102,7 +101,12 @@ def chunk_pages(
     return chunks
 
 
-def create_chroma_collection(path: str | Path, collection_name: str) -> Any:
+def create_chroma_collection(
+    path: str | Path,
+    collection_name: str,
+    *,
+    dimensions: int | None = None,
+) -> Any:
     try:
         import chromadb
     except ImportError as exc:
@@ -110,9 +114,12 @@ def create_chroma_collection(path: str | Path, collection_name: str) -> Any:
             "chromadb no está disponible; instale la dependencia para ejecutar la ingesta"
         ) from exc
     client = chromadb.PersistentClient(path=str(path))
+    metadata: dict[str, Any] = {"hnsw:space": "cosine"}
+    if dimensions is not None:
+        metadata["dimensions"] = dimensions
     return client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine"},
+        metadata=metadata,
     )
 
 
@@ -121,21 +128,22 @@ def build_default_embedder(
     *,
     api_key: str | None = None,
     base_url: str | None = None,
+    dimensions: int | None = None,
 ) -> Any:
-    """Embedder real de la ingesta, alimentado por ``Settings``.
+    """Embedder NVIDIA oficial, alimentado por ``Settings``.
 
-    ``pydantic-settings`` lee el ``.env`` pero no puebla ``os.environ``, por lo que
-    depender de ``os.getenv`` dejaba la CLI sin modelo aunque el ``.env`` existiera
-    (el servidor API sí funcionaba). El modelo se pasa explícito desde ``Settings``;
-    ``os.getenv`` queda solo como último recurso para scripts que exporten a mano.
+    Usa ``NVIDIAEmbeddings`` para respetar la semántica ``query``/``passage``
+    (``embed_query`` vs ``embed_documents``) y para declarar ``dimensions``.
+    ``pydantic-settings`` lee el ``.env`` pero no puebla ``os.environ``, por eso
+    el modelo y las credenciales llegan explícitos desde ``Settings``.
     """
     try:
-        from langchain_openai import OpenAIEmbeddings
+        from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
     except ImportError as exc:
         raise RuntimeError(
-            "langchain-openai no está disponible; inyecte un embedder para la ingesta"
+            "langchain-nvidia-ai-endpoints no está disponible; "
+            "instálelo con `pip install langchain-nvidia-ai-endpoints`"
         ) from exc
-    model = model or os.getenv("EMBEDDING_MODEL")
     if not model:
         raise RuntimeError("EMBEDDING_MODEL es obligatorio para la ingesta real")
     kwargs: dict[str, Any] = {"model": model}
@@ -143,7 +151,16 @@ def build_default_embedder(
         kwargs["api_key"] = api_key
     if base_url:
         kwargs["base_url"] = base_url
-    return OpenAIEmbeddings(**kwargs)
+    if dimensions is not None:
+        kwargs["dimensions"] = dimensions
+    return NVIDIAEmbeddings(**kwargs)
+
+
+def _embed_documents(embedder: Any, texts: list[str]) -> list[list[float]]:
+    """Embeber pasajes: acepta un embedder con ``embed_documents`` o un callable."""
+    if hasattr(embedder, "embed_documents"):
+        return list(embedder.embed_documents(texts))
+    return list(embedder(texts))
 
 
 def ingest_corpus(
@@ -151,11 +168,12 @@ def ingest_corpus(
     *,
     bm25_output_path: str | Path | None = None,
     extractor: Callable[[Path], Sequence[IngestPage | str]] | None = None,
-    embedder: Callable[[list[str]], list[list[float]]] | None = None,
+    embedder: Any | None = None,
     collection: Any | None = None,
     chroma_path: str | Path | None = None,
     collection_name: str = "contafis_normativa_v1",
     version: int | None = None,
+    dimensions: int | None = None,
     chunk_chars: int = 1000,
     chunk_overlap: int = 200,
 ) -> IngestResult:
@@ -165,11 +183,19 @@ def ingest_corpus(
         raise IngestError(f"Manifiesto inválido para ingesta: {state.status.value}")
 
     manifest = state.manifest
+    if dimensions is not None and dimensions != manifest.dimensions:
+        raise IngestError(
+            f"dimensiones del manifiesto ({manifest.dimensions}) distintas a las "
+            f"configuradas ({dimensions}); reingiera con el modelo correcto"
+        )
+    expected_dimensions = manifest.dimensions
     index_version = version if version is not None else manifest.bm25_index_version
     extract = extractor or extract_pdf_pages
 
     if collection is None and chroma_path is not None:
-        collection = create_chroma_collection(chroma_path, collection_name)
+        collection = create_chroma_collection(
+            chroma_path, collection_name, dimensions=expected_dimensions
+        )
 
     all_chunks: list[IngestChunk] = []
     for document in manifest.documents:
@@ -201,7 +227,15 @@ def ingest_corpus(
                 "metadatas": [chunk.metadata for chunk in chunks],
             }
             if embedder is not None:
-                add_kwargs["embeddings"] = embedder([chunk.text for chunk in chunks])
+                texts = [chunk.text for chunk in chunks]
+                vectors = _embed_documents(embedder, texts)
+                if any(len(vector) != expected_dimensions for vector in vectors):
+                    raise IngestError(
+                        f"dimensiones del embedder ({len(vectors[0])}) distintas a las "
+                        f"declaradas ({expected_dimensions}); revise EMBEDDING_MODEL y "
+                        f"EMBEDDING_DIMENSIONS"
+                    )
+                add_kwargs["embeddings"] = vectors
             collection.add(**add_kwargs)
 
     index = Bm25Index.build(

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str
     embedding_model: str
+    embedding_dimensions: int = Field(default=2048, ge=1)
     llm_timeout_seconds: float = 60
 
     # Corpus y retrieval

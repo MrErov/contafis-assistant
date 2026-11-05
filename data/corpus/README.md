@@ -42,7 +42,8 @@ prefijo `corpus/`.
 ## Formato de `manifest.json`
 
 Campos validados a nivel de manifiesto: `bm25_index_version` (entero ≥ 1),
-`bm25_index_sha256` (64 hex), `documents` (lista).
+`bm25_index_sha256` (64 hex), `dimensions` (entero ≥ 1, obligatorio) y
+`documents` (lista).
 
 Campos validados por documento (todos obligatorios; `extra="forbid"`):
 
@@ -64,6 +65,7 @@ Ejemplo mínimo con dos documentos:
 {
   "bm25_index_version": 1,
   "bm25_index_sha256": "cambiar_por_el_sha256_del_indice_bm25",
+  "dimensions": 2048,
   "documents": [
     {
       "id": "ley-islr",
@@ -115,9 +117,10 @@ vacías y el documento no indexa nada: hará falta OCR antes de ingerir.
 ## Flujo de ingesta
 
 1. Coloca los PDF en `data/corpus/`.
-2. Crea `data/manifest.json` con los `sha256` reales. En `bm25_index_sha256`
-   puedes poner cualquier valor de 64 hex (p. ej. `0` * 64): la ingesta no lo
-   contrasta.
+2. Crea `data/manifest.json` con los `sha256` reales y `dimensions` igual a
+   `EMBEDDING_DIMENSIONS` (2048 para `nvidia/nemotron-3-embed-1b`). En
+   `bm25_index_sha256` puedes poner cualquier valor de 64 hex (p. ej. `0` * 64):
+   la ingesta no lo contrasta.
 3. Ejecuta la ingesta desde la raíz del repo:
 
    ```powershell
@@ -125,8 +128,14 @@ vacías y el documento no indexa nada: hará falta OCR antes de ingerir.
    ```
 
    Lee el `.env` de la raíz (ya no depende del CWD) y usa `EMBEDDING_MODEL`,
-   `OPENAI_API_KEY` y `OPENAI_BASE_URL` desde `Settings`. También acepta
-   `--manifest <ruta>` si el manifiesto no está en `data/`.
+   `EMBEDDING_DIMENSIONS`, `OPENAI_API_KEY` y `OPENAI_BASE_URL` desde `Settings`.
+   También acepta `--manifest <ruta>` si el manifiesto no está en `data/`.
+
+   La ingesta usa `embed_documents` (ruta `passage` de NVIDIA) y falla con
+   `IngestError` si el manifiesto declara `dimensions` distinto de
+   `EMBEDDING_DIMENSIONS` o si el embedder devuelve otra anchura.
+
+   El servicio, en cambio, embebe la pregunta con `embed_query` (ruta `query`).
 
 4. La salida es:
 
@@ -169,3 +178,24 @@ La spec 001 confirma tres documentos obligatorios y uno opcional:
 Descarga siempre la **gaceta extraordinaria específica** de la reforma que
 necesitas y anota el número en `origin` + la fecha en `published_at`: el corpus
 debe ser trazable y la cita se apoya en esos metadatos.
+
+## Migrar de modelo de embeddings (reingesta obligatoria)
+
+Cambiar `EMBEDDING_MODEL` o `EMBEDDING_DIMENSIONS` invalida los vectores ya
+guardados: Chroma no puede mezclar anchuras distintas en una misma colección.
+
+1. Actualiza el `.env`:
+
+   ```
+   EMBEDDING_MODEL=nvidia/nemotron-3-embed-1b
+   EMBEDDING_DIMENSIONS=2048
+   ```
+
+2. Actualiza `dimensions` en `data/manifest.json` al mismo valor.
+3. Borra la colección vieja: `Remove-Item -Recurse -Force data\chroma`.
+4. Vuelve a ingerir: `python scripts\ingest_corpus.py`.
+5. Copia el `sha256` nuevo en `bm25_index_sha256` y reinicia el servicio.
+
+Si te saltas el paso 3, Chroma fallará al insertar vectores con otra dimensión;
+si te saltas el paso 2, `ingest_corpus` aborta con un `IngestError` de
+dimensiones.

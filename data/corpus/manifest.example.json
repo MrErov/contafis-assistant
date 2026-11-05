@@ -1,6 +1,7 @@
 {
   "bm25_index_version": 1,
   "bm25_index_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "dimensions": 2048,
   "documents": [
     {
       "id": "ley-islr",

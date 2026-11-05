@@ -12,6 +12,7 @@ from contafis_assistant.rag.corpus import CorpusManager
 from contafis_assistant.rag.ingest import IngestError, IngestPage, ingest_corpus
 
 PDF_BYTES = b"%PDF-1.4 contenido de prueba"
+DIMENSIONS = 2
 
 
 class FakeCollection:
@@ -54,6 +55,7 @@ def _manifest(tmp_path, index: Bm25Index, *, version: int | None = None, bm25_sh
     payload = {
         "bm25_index_version": version if version is not None else index.version,
         "bm25_index_sha256": bm25_sha if bm25_sha is not None else index.sha256,
+        "dimensions": DIMENSIONS,
         "documents": [
             {
                 "id": "doc-1",
@@ -304,6 +306,16 @@ class FakeIngestCollection:
         self.added.append(kwargs)
 
 
+class FakeIngestEmbedder:
+    def __init__(self, dimensions: int = DIMENSIONS):
+        self._dimensions = dimensions
+        self.passages = []
+
+    def embed_documents(self, texts):
+        self.passages.extend(texts)
+        return [[0.1] * self._dimensions for _ in texts]
+
+
 def test_ingest_is_offline_and_does_not_modify_sources(tmp_path):
     index = _index()
     manifest = _manifest(tmp_path, index)
@@ -320,11 +332,12 @@ def test_ingest_is_offline_and_does_not_modify_sources(tmp_path):
         return [IngestPage(page=1, text="iva impuesto al valor agregado " * 80)]
 
     collection = FakeIngestCollection()
+    embedder = FakeIngestEmbedder()
     result = ingest_corpus(
         manifest,
         bm25_output_path=tmp_path / "bm25_ingest.json",
         extractor=extractor,
-        embedder=lambda texts: [[0.1, 0.2] for _ in texts],
+        embedder=embedder,
         collection=collection,
         collection_name="col",
         version=1,

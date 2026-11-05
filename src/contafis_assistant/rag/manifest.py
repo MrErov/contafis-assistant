@@ -32,6 +32,7 @@ class Manifest(BaseModel):
 
     bm25_index_version: int = Field(ge=1)
     bm25_index_sha256: str = Field(pattern=SHA256_PATTERN)
+    dimensions: int = Field(ge=1)
     documents: list[ManifestDocument] = Field(default_factory=list)
 
 

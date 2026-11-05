@@ -275,7 +275,7 @@ def test_retriever_uses_top_10_for_dense_and_bm25():
     retriever = RagRetriever(
         corpus,
         dense_search=dense_search,
-        embedder=lambda texts: [[0.1, 0.2] for _ in texts],
+        embed_query=lambda query: [0.1, 0.2],
     )
 
     result = retriever.retrieve("iva")
@@ -303,7 +303,7 @@ def test_retriever_queries_chroma_with_embeddings_and_top_10():
     )
     retriever = RagRetriever(
         corpus,
-        embedder=lambda texts: [[0.1, 0.2] for _ in texts],
+        embed_query=lambda query: [0.1, 0.2],
     )
 
     result = retriever.retrieve("iva")
@@ -312,6 +312,45 @@ def test_retriever_queries_chroma_with_embeddings_and_top_10():
     assert collection.queries[0]["n_results"] == 10
     assert collection.queries[0]["query_embeddings"] == [[0.1, 0.2]]
     assert result.sources[0].chunk_id == "d1"
+
+
+def test_retriever_uses_embed_query_and_never_embeds_documents():
+    """La consulta debe ir por la ruta `query`, no por la ruta `passage`."""
+    collection = FakeCollection(
+        {
+            "ids": [["d1"]],
+            "documents": [["texto d1"]],
+            "metadatas": [[{"document_id": "doc-1", "page": 2, "collection": "col"}]],
+            "distances": [[0.10]],
+        }
+    )
+    corpus = FakeCorpus(
+        bm25_index=FakeBm25Index([]),
+        allowed_document_ids={"doc-1"},
+        collection=collection,
+        collection_name="col",
+    )
+    query_calls: list[str] = []
+    documents_calls: list[list[str]] = []
+
+    def embed_query(text):
+        query_calls.append(text)
+        return [0.1, 0.2]
+
+    def embed_documents(texts):
+        documents_calls.append(list(texts))
+        return [[0.1, 0.2] for _ in texts]
+
+    retriever = RagRetriever(
+        corpus,
+        embed_query=embed_query,
+        embed_documents=embed_documents,
+    )
+
+    retriever.retrieve("iva")
+
+    assert query_calls == ["iva"], "el texto crudo de la pregunta llega a embed_query"
+    assert documents_calls == [], "el retrieval no debe embeber pasajes"
 
 
 def test_retriever_reports_invalid_corpus_without_querying():
@@ -337,7 +376,7 @@ def test_retriever_reports_low_score_without_sources():
     retriever = RagRetriever(
         corpus,
         dense_search=lambda query, top_k: [],
-        embedder=lambda texts: [[0.1] for _ in texts],
+        embed_query=lambda query: [0.1],
     )
 
     result = retriever.retrieve("iva")

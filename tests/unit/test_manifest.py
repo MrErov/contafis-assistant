@@ -50,6 +50,7 @@ def _write_manifest(
             {
                 "bm25_index_version": version,
                 "bm25_index_sha256": bm25_sha,
+                "dimensions": 2048,
                 "documents": documents,
             }
         ),

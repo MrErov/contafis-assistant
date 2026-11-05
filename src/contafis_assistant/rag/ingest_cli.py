@@ -35,7 +35,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.manifest
         else manifest_path_for_bm25(settings.bm25_index_path)
     )
-    collection = create_chroma_collection(settings.chroma_path, settings.chroma_collection)
+    collection = create_chroma_collection(
+        settings.chroma_path,
+        settings.chroma_collection,
+        dimensions=settings.embedding_dimensions,
+    )
     result = ingest_corpus(
         manifest_path,
         bm25_output_path=settings.bm25_index_path,
@@ -44,10 +48,12 @@ def main(argv: list[str] | None = None) -> int:
             settings.embedding_model,
             api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url,
+            dimensions=settings.embedding_dimensions,
         ),
         collection=collection,
         collection_name=settings.chroma_collection,
         version=settings.bm25_index_version,
+        dimensions=settings.embedding_dimensions,
     )
     print(
         f"documentos={len(result.document_ids)} chunks={result.chunks} "

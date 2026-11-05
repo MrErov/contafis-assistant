@@ -292,9 +292,11 @@ class ChatRuntime:
         from contafis_assistant.rag.retriever import RagRetriever
 
         # Reutilizar el corpus global para RAG (no depende del usuario)
+        embedder = _lazy_embedder(self.settings)
         retriever = RagRetriever(
             self.corpus,
-            embedder=_LazyEmbedder(self.settings.embedding_model),
+            embed_query=embedder.embed_query,
+            embed_documents=embedder.embed_documents,
             dense_top_k=self.settings.retrieval_dense_top_k,
             bm25_top_k=self.settings.retrieval_bm25_top_k,
             final_top_k=self.settings.retrieval_final_top_k,
@@ -549,9 +551,11 @@ def _build_tools(
     settings: Settings,
     clock: Clock,
 ) -> dict[Any, ToolCallable]:
+    embedder = _lazy_embedder(settings)
     retriever = RagRetriever(
         corpus,
-        embedder=_LazyEmbedder(settings.embedding_model),
+        embed_query=embedder.embed_query,
+        embed_documents=embedder.embed_documents,
         dense_top_k=settings.retrieval_dense_top_k,
         bm25_top_k=settings.retrieval_bm25_top_k,
         final_top_k=settings.retrieval_final_top_k,
@@ -667,16 +671,50 @@ def _build_entity_resolver(
 
 
 class _LazyEmbedder:
-    def __init__(self, model: str) -> None:
+    """Embedder NVIDIA diferido, con rutas separadas de query y de pasajes."""
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        dimensions: int | None = None,
+    ) -> None:
         self._model = model
+        self._api_key = api_key
+        self._base_url = base_url
+        self._dimensions = dimensions
         self._embedder: Any | None = None
 
-    def __call__(self, texts: list[str]) -> list[list[float]]:
+    def _ensure(self) -> Any:
         if self._embedder is None:
-            from langchain_openai import OpenAIEmbeddings
+            from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 
-            self._embedder = OpenAIEmbeddings(model=self._model)
-        return self._embedder.embed_documents(list(texts))
+            kwargs: dict[str, Any] = {"model": self._model}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            if self._base_url:
+                kwargs["base_url"] = self._base_url
+            if self._dimensions is not None:
+                kwargs["dimensions"] = self._dimensions
+            self._embedder = NVIDIAEmbeddings(**kwargs)
+        return self._embedder
+
+    def embed_query(self, text: str) -> list[float]:
+        return list(self._ensure().embed_query(text))
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [list(vector) for vector in self._ensure().embed_documents(list(texts))]
+
+
+def _lazy_embedder(settings: Settings) -> _LazyEmbedder:
+    return _LazyEmbedder(
+        settings.embedding_model,
+        api_key=settings.openai_api_key.get_secret_value(),
+        base_url=settings.openai_base_url,
+        dimensions=settings.embedding_dimensions,
+    )
 
 
 def _extract_json_object(content: Any) -> Any:
