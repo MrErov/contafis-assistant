@@ -12,13 +12,24 @@ from contafis_assistant.rag.ingest import (
 )
 from contafis_assistant.rag.manifest import manifest_path_for_bm25
 
+# Raíz del repo: src/contafis_assistant/rag/ingest_cli.py -> parents[3].
+# ``Settings(_env_file=None)`` desactivaba la lectura del .env y la CLI fallaba
+# aunque el servidor API funcionara (este usa ``Settings()`` con CWD=repo root).
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _load_settings() -> Settings:
+    """Settings leyendo el .env del repo, sin depender del CWD actual."""
+    env_file = REPO_ROOT / ".env"
+    return Settings(_env_file=env_file if env_file.is_file() else None)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingesta offline del corpus normativo")
     parser.add_argument("--manifest", help="Ruta del manifest.json")
     args = parser.parse_args(argv)
 
-    settings = Settings(_env_file=None)
+    settings = _load_settings()
     manifest_path = (
         Path(args.manifest)
         if args.manifest
@@ -29,7 +40,11 @@ def main(argv: list[str] | None = None) -> int:
         manifest_path,
         bm25_output_path=settings.bm25_index_path,
         extractor=extract_pdf_pages,
-        embedder=build_default_embedder(),
+        embedder=build_default_embedder(
+            settings.embedding_model,
+            api_key=settings.openai_api_key.get_secret_value(),
+            base_url=settings.openai_base_url,
+        ),
         collection=collection,
         collection_name=settings.chroma_collection,
         version=settings.bm25_index_version,

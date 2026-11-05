@@ -116,17 +116,34 @@ def create_chroma_collection(path: str | Path, collection_name: str) -> Any:
     )
 
 
-def build_default_embedder() -> Any:
+def build_default_embedder(
+    model: str | None = None,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> Any:
+    """Embedder real de la ingesta, alimentado por ``Settings``.
+
+    ``pydantic-settings`` lee el ``.env`` pero no puebla ``os.environ``, por lo que
+    depender de ``os.getenv`` dejaba la CLI sin modelo aunque el ``.env`` existiera
+    (el servidor API sí funcionaba). El modelo se pasa explícito desde ``Settings``;
+    ``os.getenv`` queda solo como último recurso para scripts que exporten a mano.
+    """
     try:
         from langchain_openai import OpenAIEmbeddings
     except ImportError as exc:
         raise RuntimeError(
             "langchain-openai no está disponible; inyecte un embedder para la ingesta"
         ) from exc
-    model = os.getenv("EMBEDDING_MODEL")
+    model = model or os.getenv("EMBEDDING_MODEL")
     if not model:
         raise RuntimeError("EMBEDDING_MODEL es obligatorio para la ingesta real")
-    return OpenAIEmbeddings(model=model)
+    kwargs: dict[str, Any] = {"model": model}
+    if api_key:
+        kwargs["api_key"] = api_key
+    if base_url:
+        kwargs["base_url"] = base_url
+    return OpenAIEmbeddings(**kwargs)
 
 
 def ingest_corpus(
