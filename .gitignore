@@ -36,6 +36,10 @@ pip-log.txt
 pip-delete-this-directory.txt
 pip-build-env-*/
 pip-build-tracker-*/
+pip-ephem-wheel-cache-*/
+pip-install-*/
+pip-metadata-*/
+pip-unpack-*/
 
 # Unit test / coverage reports
 htmlcov/
