@@ -22,6 +22,7 @@ from contafis_assistant.odoo.errors import (
 )
 
 API_KEY = "s3cr3t-odoo-key"
+SESSION_ID = "sid-de-prueba"
 
 
 def make_client(handler, *, allowed_company_ids=(1, 2), uid=7, timeout=5.0):
@@ -430,3 +431,166 @@ def test_tool_budget_spend_and_remaining():
     assert budget.remaining == 0
     with pytest.raises(NoBudgetError):
         budget.spend()
+
+
+# ---------------------------------------------------------------------------
+# Modo sesión: JSON-RPC clásico
+# ---------------------------------------------------------------------------
+#
+# El widget de Odoo autentica con ``X-Odoo-Session``: el servidor reenvía la
+# cookie del usuario. El JSON/2 de Odoo 19 sólo admite ``Authorization: Bearer``
+# y responde 401 a las cookies, así que el modo sesión habla
+# ``POST /web/dataset/call_kw`` (JSON-RPC clásico).
+
+
+def make_session_client(handler, *, allowed_company_ids=(1, 2), uid=7, timeout=5.0):
+    requests = []
+
+    def wrapped(request):
+        requests.append(request)
+        return handler(request, len(requests))
+
+    transport = httpx.MockTransport(wrapped)
+    client = OdooClient(
+        url="http://odoo.example:8069",
+        database="contea",
+        session_id=SESSION_ID,
+        timeout=timeout,
+        transport=transport,
+        allowed_company_ids=list(allowed_company_ids),
+        uid=uid,
+    )
+    return client, requests
+
+
+def call_kw_result(result):
+    return httpx.Response(200, json={"jsonrpc": "2.0", "id": None, "result": result})
+
+
+def test_session_mode_uses_classic_call_kw_with_cookie():
+    client, requests = make_session_client(
+        lambda request, attempt: call_kw_result([{"id": 1, "name": "My Company"}])
+    )
+
+    result = client.execute(search_call())
+
+    assert result == [{"id": 1, "name": "My Company"}]
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "http://odoo.example:8069/web/dataset/call_kw"
+    assert request.headers["Cookie"] == f"session_id={SESSION_ID}"
+    assert "Authorization" not in request.headers
+    assert request.headers["X-Odoo-Database"] == "contea"
+
+    body = json.loads(request.content)
+    assert body["jsonrpc"] == "2.0"
+    assert body["method"] == "call"
+    params = body["params"]
+    assert params["model"] == "res.company"
+    assert params["method"] == "search_read"
+    assert params["args"] == [[["active", "=", True]]]
+    assert params["kwargs"] == {
+        "fields": ["id", "name"],
+        "offset": 0,
+        "limit": 50,
+        "context": {"allowed_company_ids": [1, 2]},
+    }
+
+
+def test_session_mode_read_sends_ids_positionally():
+    client, requests = make_session_client(
+        lambda request, attempt: call_kw_result([{"id": 7, "company_ids": [1]}]))
+    client.uid = 7
+
+    result = client.execute(
+        RpcCall(model="res.users", method="read", ids=[7], fields=["company_ids"])
+    )
+
+    assert result == [{"id": 7, "company_ids": [1]}]
+    params = json.loads(requests[0].content)["params"]
+    assert params["args"] == [[7]]
+    assert params["kwargs"] == {
+        "fields": ["company_ids"],
+        "context": {"allowed_company_ids": [1, 2]},
+    }
+
+
+def test_session_mode_has_group_sends_group_ext_id_positionally():
+    client, requests = make_session_client(
+        lambda request, attempt: call_kw_result(False))
+
+    result = client.execute(
+        RpcCall(
+            model="res.users",
+            method="has_group",
+            ids=[7],
+            group_ext_id="base.group_system",
+        )
+    )
+
+    assert result is False
+    params = json.loads(requests[0].content)["params"]
+    assert params["args"] == [[7], "base.group_system"]
+
+
+def test_session_mode_context_get_sends_no_positional_args():
+    client, requests = make_session_client(
+        lambda request, attempt: call_kw_result({"uid": 7, "lang": "es_VE"}))
+
+    result = client.execute(RpcCall(model="res.users", method="context_get"))
+
+    assert result == {"uid": 7, "lang": "es_VE"}
+    params = json.loads(requests[0].content)["params"]
+    assert params["args"] == []
+    assert params["kwargs"] == {"context": {"allowed_company_ids": [1, 2]}}
+
+
+def test_session_mode_unwraps_jsonrpc_errors_as_response_error():
+    client, requests = make_session_client(
+        lambda request, attempt: httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": 0,
+                    "message": "Odoo Server Error",
+                    "data": {
+                        "name": "builtins.ValidationError",
+                        "message": "dominio inválido",
+                    },
+                },
+            },
+        )
+    )
+
+    with pytest.raises(OdooResponseError):
+        client.execute(search_call(), budget=ToolBudget(max_calls=3))
+
+    assert len(requests) == 1
+
+
+def test_session_mode_expired_session_is_an_auth_error():
+    client, requests = make_session_client(
+        lambda request, attempt: httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": 100,
+                    "message": "Odoo Session Expired",
+                    "data": {
+                        "name": "odoo.http.SessionExpiredException",
+                        "message": "Session expired",
+                    },
+                },
+            },
+        )
+    )
+
+    with pytest.raises(OdooAuthError):
+        client.execute(search_call(), budget=ToolBudget(max_calls=3))
+
+    assert len(requests) == 1

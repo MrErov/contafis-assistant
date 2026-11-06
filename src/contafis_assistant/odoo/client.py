@@ -1,10 +1,19 @@
-"""Cliente Odoo 19 JSON/2 read-only con timeout, errores tipados y retry acotado."""
+"""Cliente Odoo 19 read-only con timeout, errores tipados y retry acotado.
+
+Dos modos de autenticación, dos protocolos:
+
+* **API key** → ``POST /json/2/{model}/{method}`` (Odoo 19, ``Bearer``).
+* **Sesión de usuario** → ``POST /web/dataset/call_kw`` (JSON-RPC clásico con
+  cookie). El JSON/2 sólo acepta ``Authorization: Bearer``: con una cookie de
+  sesión responde 401, así que el camino del widget de Odoo no puede usarlo.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -180,8 +189,13 @@ class OdooClient:
                 )
 
     def _post(self, call: RpcCall, allowed_company_ids: Sequence[int]) -> Any:
-        url = f"{self._url}/json/2/{call.model}/{call.method}"
-        body = self._build_body(call, allowed_company_ids)
+        session = bool(self._session_id)
+        if session:
+            url = f"{self._url}/web/dataset/call_kw"
+            body = self._build_call_kw_body(call, allowed_company_ids)
+        else:
+            url = f"{self._url}/json/2/{call.model}/{call.method}"
+            body = self._build_body(call, allowed_company_ids)
 
         try:
             response = self._http.post(url, headers=self._headers(), json=body)
@@ -190,9 +204,14 @@ class OdooClient:
         except httpx.TransportError:
             raise OdooTransientError("error de transporte al llamar a Odoo") from None
 
-        return self._parse_response(response)
+        return self._parse_response(response, session=session)
 
-    def _parse_response(self, response: httpx.Response) -> Any:
+    def _parse_response(
+        self,
+        response: httpx.Response,
+        *,
+        session: bool = False,
+    ) -> Any:
         status = response.status_code
         try:
             payload: Any = response.json()
@@ -225,6 +244,9 @@ class OdooClient:
             raise OdooResponseError(
                 "Odoo devolvió una respuesta no JSON", status=status
             )
+
+        if session:
+            return _unwrap_call_kw(payload)
 
         if _looks_like_error_payload(payload):
             raise OdooResponseError(
@@ -259,12 +281,7 @@ class OdooClient:
         if call.ids is not None:
             body["ids"] = list(call.ids)
 
-        context: dict[str, Any] = {
-            "allowed_company_ids": [int(value) for value in allowed_company_ids]
-        }
-        if call.active_test is not None:
-            context["active_test"] = call.active_test
-        body["context"] = context
+        body["context"] = self._build_context(call, allowed_company_ids)
 
         if call.domain is not None:
             body["domain"] = _jsonable(call.domain)
@@ -278,6 +295,57 @@ class OdooClient:
             body["group_ext_id"] = call.group_ext_id
 
         return body
+
+    def _build_call_kw_body(
+        self,
+        call: RpcCall,
+        allowed_company_ids: Sequence[int],
+    ) -> dict[str, Any]:
+        """Sobre JSON-RPC de ``/web/dataset/call_kw`` para el modo sesión.
+
+        ``args`` lleva los posicionales que el método de Odoo espera —dominio,
+        ``ids`` o XML ID del grupo, en ese orden— y ``kwargs`` el resto, igual
+        que lo hace el cliente web.
+        """
+        args: list[Any] = []
+        if call.domain is not None:
+            args.append(_jsonable(call.domain))
+        elif call.ids is not None:
+            args.append(list(call.ids))
+        if call.group_ext_id is not None:
+            args.append(call.group_ext_id)
+
+        kwargs: dict[str, Any] = {}
+        if call.fields is not None:
+            kwargs["fields"] = list(call.fields)
+        if call.offset is not None:
+            kwargs["offset"] = call.offset
+        if call.limit is not None:
+            kwargs["limit"] = call.limit
+        kwargs["context"] = self._build_context(call, allowed_company_ids)
+
+        return {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": call.model,
+                "method": call.method,
+                "args": args,
+                "kwargs": kwargs,
+            },
+        }
+
+    @staticmethod
+    def _build_context(
+        call: RpcCall,
+        allowed_company_ids: Sequence[int],
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "allowed_company_ids": [int(value) for value in allowed_company_ids]
+        }
+        if call.active_test is not None:
+            context["active_test"] = call.active_test
+        return context
 
     # ------------------------------------------------------------------
     # Presupuesto y truncamiento
@@ -333,3 +401,30 @@ def _looks_like_error_payload(payload: Any) -> bool:
         and bool(payload.get("name"))
         and "message" in payload
     )
+
+
+def _unwrap_call_kw(payload: Any) -> Any:
+    """Desenvuelve la respuesta de ``/web/dataset/call_kw``.
+
+    Odoo responde HTTP 200 incluso cuando la llamada falla: el error viaja en
+    la clave ``error`` y el éxito en ``result``.
+    """
+    if not isinstance(payload, Mapping):
+        return payload
+
+    error = payload.get("error")
+    if isinstance(error, Mapping):
+        if _is_session_expired_error(error):
+            raise OdooAuthError("la sesión de Odoo expiró o no es válida")
+        raise OdooResponseError("Odoo devolvió un error en la respuesta")
+
+    return payload.get("result")
+
+
+def _is_session_expired_error(error: Mapping[str, Any]) -> bool:
+    if error.get("code") == 100:
+        return True
+    data = error.get("data")
+    if isinstance(data, Mapping):
+        return data.get("name") == "odoo.http.SessionExpiredException"
+    return False
