@@ -92,8 +92,14 @@ def classify_scope(
     app_env: Literal["development", "test", "production"],
     checked_at: datetime,
     uid: int | None = None,
+    attestation_required: bool = True,
 ) -> ScopeSnapshot:
-    """Clasificación pura de §8.3; sin I/O."""
+    """Clasificación pura de §8.3; sin I/O.
+
+    ``attestation_required`` distingue el modo token (API key de servicio,
+    que sí debe estar atestada como read-only) del modo sesión (el usuario
+    se autentica con su propia sesión web y sus ACLs, sin API key).
+    """
 
     user_ids = _normalize_ids(user_company_ids)
     active_ids = _normalize_ids(active_company_ids)
@@ -123,7 +129,7 @@ def classify_scope(
             **common,
         )
 
-    if not attested:
+    if attestation_required and not attested:
         return ScopeSnapshot(
             state=ScopeState.scope_unsafe,
             reason=ScopeReason.attestation,
@@ -166,10 +172,12 @@ class ScopeService:
         attested: bool,
         ttl_seconds: int = 300,
         clock: Clock | None = None,
+        attestation_required: bool = True,
     ) -> None:
         self._client = client
         self._app_env = app_env
         self._attested = attested
+        self._attestation_required = attestation_required
         self._ttl_seconds = ttl_seconds
         self._clock = clock or Clock()
         self._lock = threading.RLock()
@@ -296,6 +304,7 @@ class ScopeService:
                 app_env=self._app_env,
                 checked_at=now,
                 uid=uid,
+                attestation_required=self._attestation_required,
             )
         except OdooError:
             return ScopeSnapshot(

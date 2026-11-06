@@ -278,13 +278,17 @@ def _build_user_context_from_session(
         session_id=session_id,
     )
 
-    # ScopeService con el cliente de la sesión
+    # ScopeService con el cliente de la sesión.
+    # La atestación read-only aplica a la API key de servicio (modo token),
+    # no a una sesión de usuario: aquí el cliente usa la cookie del usuario y
+    # sus propias ACLs, así que no hay API key que atestar.
     scope_service = ScopeService(
         client,
         app_env=settings.app_env,
         attested=settings.odoo_readonly_attested,
         ttl_seconds=settings.scope_check_ttl_seconds,
         clock=runtime.clock,
+        attestation_required=False,
     )
 
     # Forzar refresh para que use el uid y allowed_company_ids ya seteados
