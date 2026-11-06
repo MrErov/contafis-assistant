@@ -1,0 +1,19 @@
+# Compose SOLO para desarrollo local (Spec 004 §12.3).
+# Render/Railway consumen la imagen directamente; este archivo no se usa allí.
+# Sin secretos literales: las claves viven en .env (gitignored).
+services:
+  api:
+    build:
+      context: .
+    image: contafis-assistant:dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # D11: host no loopback => Settings exige API_SHARED_SECRET (H4).
+      API_HOST: 0.0.0.0
+    volumes:
+      # Corpus y Chroma en bind mount; no viajan dentro de la imagen (D6).
+      - ./data:/app/data
+    restart: unless-stopped

@@ -73,10 +73,13 @@ class _LoopbackOnlySocket(socket.socket):
         super().bind(address)
 
 
+_real_create_connection = socket.create_connection
+
+
 def _guarded_create_connection(address, *args, **kwargs):
     if not _is_loopback(address):
         raise AssertionError("Network access is blocked in tests")
-    return socket.create_connection(address, *args, **kwargs)
+    return _real_create_connection(address, *args, **kwargs)
 
 
 @pytest.fixture(autouse=True)

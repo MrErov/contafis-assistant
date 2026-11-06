@@ -1,0 +1,40 @@
+# Secretos — jamás entran al contexto de build (H9, RF-DEP-03).
+.env
+.env.*
+
+# VCS y CI
+.git
+.github
+
+# Entornos virtuales
+.venv
+venv
+env
+
+# Cachés de Python y herramientas
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Cobertura
+htmlcov
+.coverage
+
+# Tests, specs y docs (no se necesitan dentro de la imagen)
+tests
+notebooks
+specs
+docs
+
+# Datos y corpus — el corpus no viaja en la imagen (D6)
+data
+
+# PDFs
+*.pdf
+
+# Artefactos temporales de pytest/pip y logs
+pytest-of-*
+pip-*
+*.log
