@@ -117,7 +117,7 @@
 
 ## F3: CI de imagen
 
-- [ ] **T3 — Job `image` en GitHub Actions (build + smoke + secretos + tamaño)**
+- [x] **T3 — Job `image` en GitHub Actions (build + smoke + secretos + tamaño)**
 
   **Alcance:** que un PR no pueda mergear si la imagen no construye, no arranca o filtra
   secretos.

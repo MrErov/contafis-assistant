@@ -40,3 +40,56 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      DOCKER_BUILDKIT: 1
+      BUILDKIT_PROGRESS: plain
+      RUN_DOCKER_TESTS: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        run: docker build -t contafis-assistant:test .
+
+      - name: Run container smoke tests
+        run: RUN_DOCKER_TESTS=1 pytest tests/docker -m docker -v
+
+      - name: Verify non-root user
+        run: docker run --rm contafis-assistant:test id -u
+
+      - name: Verify .dockerignore excludes .env
+        run: docker run --rm contafis-assistant:test sh -c 'test ! -e /app/.env'
+
+      - name: Scan for secrets in image layers
+        run: |
+          if docker history --no-trunc contafis-assistant:test | grep -iE '(api[_-]?key|secret)=[A-Za-z0-9]'; then
+            echo "::error::Secrets found in image layers"
+            exit 1
+          fi
+
+      - name: Verify image size ≤ 1.8 GB
+        run: |
+          SIZE=$(docker image inspect contafis-assistant:test --format '{{.Size}}')
+          echo "Image size: $SIZE bytes"
+          if [ "$SIZE" -gt 1800000000 ]; then
+            echo "::error::Image size ${SIZE} exceeds 1.8 GB limit"
+            exit 1
+          fi
