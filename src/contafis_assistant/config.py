@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # LLM y embeddings
     openai_api_key: SecretStr
-    openai_base_url: str = "https://api.openai.com/v1"
+    openai_base_url: str = "https://integrate.api.nvidia.com/v1"
     llm_model: str
     embedding_model: str
     embedding_dimensions: int = Field(default=2048, ge=1)
