@@ -268,7 +268,7 @@
 
 ## F8: Producción
 
-- [ ] **T8 — Promoción a producción con Odoo público y atestación**
+- [x] **T8 — Promoción a producción con Odoo público y atestación**
 
   **Alcance:** documentar y verificar las condiciones que hacen que producción arranque
   (y que fallen cerrado cuando no se cumplen).
