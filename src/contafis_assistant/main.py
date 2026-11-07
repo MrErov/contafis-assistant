@@ -995,6 +995,10 @@ def create_app(
 
     @app.middleware("http")
     async def _api_key_middleware(request: Request, call_next):
+        # Allowlist exacta: ruta /livez (cualquier método) sin autenticación
+        # FastAPI devolverá 405 para métodos no permitidos (solo GET está implementado)
+        if request.url.path == "/livez":
+            return await call_next(request)
         if not guard.check(request.headers.get(API_KEY_HEADER)):
             return JSONResponse(
                 status_code=401,

@@ -94,6 +94,13 @@ def scope(user_ctx: UserContext = Depends(get_user_context_from_session)) -> Sco
     )
 
 
+@router.get("/livez")
+def livez() -> dict[str, str]:
+    """Liveness probe: responde 200 sin autenticación ni dependencias de runtime."""
+    from contafis_assistant import __version__
+    return {"status": "alive", "app_version": __version__}
+
+
 @router.get("/health")
 def health(request: Request) -> JSONResponse:
     runtime = _runtime(request)

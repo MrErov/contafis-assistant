@@ -144,7 +144,7 @@
 
 ## F4: Liveness (desbloquea Render)
 
-- [ ] **T4 — `GET /livez` sin autenticación y allowlist exacta del middleware**
+- [x] **T4 — `GET /livez` sin autenticación y allowlist exacta del middleware**
 
   **Alcance:** endpoint de liveness que Render pueda consultar sin headers, sin relajar
   `/health`.
