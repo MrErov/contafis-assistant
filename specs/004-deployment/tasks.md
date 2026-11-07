@@ -316,7 +316,7 @@
 
 ## F10: Cierre operativo
 
-- [ ] **T10 — Runbook final, rollback, observabilidad y sincronización de docs**
+- [x] **T10 — Runbook final, rollback, observabilidad y sincronización de docs**
 
   **Alcance:** dejar operable el despliegue y la documentación consistente.
 

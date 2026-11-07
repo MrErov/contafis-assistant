@@ -3,7 +3,7 @@
 > Asistente fiscal conversacional con RAG y LangGraph para el ecosistema ContaFis.
 > Demo pública de la arquitectura. El código de producción está disponible bajo NDA.
 
-[![Tests](https://img.shields.io/badge/Tests-680+-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-840+-brightgreen)]()
 [![Python](https://img.shields.io/badge/Python-3.10+-blue)]()
 [![LangChain](https://img.shields.io/badge/LangChain-1.x-green)]()
 [![License](https://img.shields.io/badge/License-Proprietary-red)]()
@@ -38,14 +38,15 @@ venezolanos consultar su estado fiscal conversando en lenguaje natural, conectan
 - 🔍 **RAG híbrido**: búsqueda semántica + BM25 sobre normativas fiscales.
 - 🛡️ **Seguridad**: redacción de PII, defensa contra prompt injection, tokens por usuario.
 - 📊 **Observabilidad**: trazabilidad completa en LangSmith.
-- ✅ **680+ tests**: TDD estricto con cobertura de casos límite.
-- 🐳 **Dockerizado**: listo para desplegar.
+- ✅ **840+ tests**: TDD estricto con cobertura de casos límite.
+- 🐳 **Dockerizado**: ver [Runbook de despliegue](docs/DEPLOY.md).
 
 ## 📚 Documentación técnica
 
 - [Especificaciones SDD](specs/) — Spec-Driven Development
 - [Constitución del proyecto](docs/constitution.md) — 6 principios innegociables
 - [Guía del agente](AGENTS.md) — Reglas para desarrollo con IA
+- [Runbook de despliegue](docs/DEPLOY.md) — Staging, producción, rollback, observabilidad
 
 ## 🔒 Acceso al código completo
 

@@ -10,7 +10,7 @@ Asistente fiscal conversacional basado en RAG para contadores venezolanos.
 
 ## Flujo de Desarrollo (Híbrido Pragmático)
 - **SDD (Spec-Driven)**: Specs acotadas en `specs/NNN-nombre/` antes de codear.
-- **TDD (Test-Driven)**: Tests primero (en rojo), luego código. 562 tests actuales.
+- **TDD (Test-Driven)**: Tests primero (en rojo), luego código. 841 tests actuales.
 - **ODD (Observation-Driven)**: Trazas visuales en LangSmith para validar alucinaciones.
 
 ## Índice de Especificaciones
@@ -18,12 +18,15 @@ Asistente fiscal conversacional basado en RAG para contadores venezolanos.
   - Estado: ✅ COMPLETADA (671 tests, 59 AC, 48 acceptance/security tests).
 - [002-ui-auth](specs/002-ui-auth/spec.md) — Interfaz de Usuario y Autenticación (Streamlit + FastAPI).
   - Estado: ✅ COMPLETADA (686 tests, 125 AC, UI tests verdes).
+- [004-deployment](specs/004-deployment/spec.md) — Dockerización y Deployment (Render, Docker, CI/CD).
+  - Estado: ✅ COMPLETADA (841 tests, 100% TDD).
 
 ## Roadmap
 - ☑ Spec 001: Chat Fiscal MVP (671 tests, 100% TDD).
 - ☑ Spec 002: Interfaz de Usuario y Autenticación (686 tests, 100% TDD).
 - ☐ Spec 003: Autenticación Real (eliminar `scope_admin_key`).
-- ☐ Spec 004: Ingesta dinámica de PDFs (Gacetas/Leyes).
+- ☑ Spec 004: Dockerización y Deployment (841 tests, 100% TDD).
+- ☐ Spec 005: Ingesta dinámica de PDFs (Gacetas/Leyes).
 
 ## Comandos Disponibles
 - `/commit`: Commitea y pushea.
