@@ -14,7 +14,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY requirements.txt .
+COPY requirements.txt constraints.txt .
 RUN pip wheel --wheel-dir /wheels -r requirements.txt
 
 FROM python:3.12-slim AS runtime
@@ -31,7 +31,7 @@ WORKDIR /app
 
 # Instalación offline desde wheels precompiladas, sin resolver red ni compilar.
 COPY --from=builder /wheels /wheels
-COPY requirements.txt .
+COPY requirements.txt constraints.txt .
 RUN pip install --no-index --find-links=/wheels -r requirements.txt \
     && rm -rf /wheels
 

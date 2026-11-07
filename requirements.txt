@@ -2,7 +2,6 @@
 
 # Stack LangChain / LangGraph
 langchain
-langchain-core
 langchain-community
 langchain-openai
 langchain-nvidia-ai-endpoints

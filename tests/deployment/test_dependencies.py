@@ -1,203 +1,328 @@
-"""Tests de reproducibilidad de dependencias (Spec 004 T2).
+"""Tests de reproducibilidad de dependencias (Spec 004, T2).
 
-Verifica que:
-1. `requirements.txt` y `pyproject.toml` declaran las mismas dependencias runtime.
-2. `constraints.txt` existe y contiene versiones exactas.
-3. No hay divergencias no documentadas entre ambos archivos.
+Garantías, sin red y sin Docker por defecto:
+
+1. `constraints.txt` existe, es UTF-8/ASCII limpio y contiene solo pins exactos
+   (`nombre==versión`), sin rutas, URLs, hashes ni duplicados.
+2. `requirements.txt` declara `-c constraints.txt` primero y todo lo que instala
+   está pineado por el constraints.
+3. `pyproject.toml` no declara dependencias runtime que falten en
+   `requirements.txt` (salvo las documentadas en `PYPROJECT_ONLY`).
+4. Las allowlists de divergencia están disjuntas y vigentes: si alguien alinea
+   un paquete y olvida actualizar la allowlist, el test falla.
+5. El Dockerfile copia `constraints.txt` antes de cada `RUN ... pip ... -r
+   requirements.txt` (builder y runtime).
+
+El único test que usa Docker (`test_image_freeze_matches_constraints`) está
+marcado `docker` y solo corre con `RUN_DOCKER_TESTS=1` (mismo contrato que
+`tests/docker/`); compara el `pip freeze` de la imagen contra `constraints.txt`.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
-import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 REQUIREMENTS_TXT = REPO_ROOT / "requirements.txt"
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 CONSTRAINTS_TXT = REPO_ROOT / "constraints.txt"
+DOCKERFILE = REPO_ROOT / "Dockerfile"
+
+IMAGE_TAG = "contafis-assistant:dev"
+
+# Paquetes de herramienta que pip instala consigo mismo y no forman parte del
+# árbol de dependencias de la aplicación.
+_TOOLING = {"pip", "setuptools", "wheel"}
+
+# Divergencias documentadas (nombre canónico PEP 503 → motivo).
+PYPROJECT_ONLY: dict[str, str] = {
+    "langchain-core": "transitiva de langchain/langgraph; sin imports directos en src/",
+    "openai": "transitiva de langchain-openai; src/ usa ChatOpenAI",
+    "tenacity": "transitiva; sin imports directos en src/",
+    "python-dateutil": "transitiva; sin imports directos en src/",
+    "pyyaml": "transitiva; sin imports directos en src/",
+    "orjson": "transitiva; sin imports directos en src/",
+}
+REQUIREMENTS_ONLY: dict[str, str] = {
+    "langchain-community": "declarada; sin imports en src/ (candidata a poda en T10)",
+    "rank-bm25": "BM25 propio en rag/bm25.py; sin imports",
+    "pytest": "solo test",
+    "pytest-mock": "solo test",
+    "pillow": "solo test (tests/api/conftest.py, tests/unit/test_digitize.py)",
+}
+
+# Pin exacto: `nombre==versión` (o `===`), con marker opcional.
+_PIN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(==|===)[^\s;]+(;.*)?$")
 
 
-def _parse_requirements_txt(path: Path) -> dict[str, str]:
-    """Parsea requirements.txt y devuelve {package: specifier}."""
-    deps = {}
+def canon(name: str) -> str:
+    """Normaliza un nombre de paquete según PEP 503."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _requirement_name(line: str) -> str | None:
+    """Nombre canónico de un requisito PEP 508; corta extras ``[..]`` y markers ``;``."""
+    line = line.split(";", 1)[0]
+    line = line.split("[", 1)[0]
+    match = re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*", line.strip())
+    return canon(match.group(0)) if match else None
+
+
+def _parse_requirements(path: Path) -> set[str]:
+    """Nombres canónicos declarados en requirements.txt.
+
+    Ignora comentarios y opciones de pip (líneas que empiezan con ``-``,
+    como ``-c constraints.txt``).
+    """
+    names: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("-"):
             continue
-        # Soporte básico: package[extra]==specifier o package==specifier
-        # Ignorar líneas que empiecen con - (opciones de pip como -c, -r, etc.)
-        match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", line)
-        if match:
-            name = match.group(1).lower()
-            deps[name] = line
-    return deps
+        name = _requirement_name(line)
+        if name:
+            names.add(name)
+    return names
 
 
-def _parse_pyproject_toml_dependencies(path: Path) -> dict[str, str]:
-    """Extrae dependencies del [project] en pyproject.toml."""
-    import tomllib
-
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    deps = {}
-    for dep in data.get("project", {}).get("dependencies", []):
-        match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", dep)
-        if match:
-            name = match.group(1).lower()
-            deps[name] = dep
-    return deps
-
-
-def _parse_constraints_txt(path: Path) -> dict[str, str]:
-    """Parsea constraints.txt (formato pip freeze: package==version)."""
-    deps = {}
+def _parse_constraints(path: Path) -> dict[str, str]:
+    """Mapa {nombre canónico: versión} de constraints.txt (formato pip freeze)."""
+    pins: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if "==" in line:
-            name, version = line.split("==", 1)
-            deps[name.lower()] = version
-    return deps
+        match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(===|==)([^\s;]+)", line)
+        assert match, f"constraints.txt: línea sin pin exacto: {line!r}"
+        pins[canon(match.group(1))] = match.group(3)
+    return pins
 
 
-class TestConstraintsExist:
-    """constraints.txt debe existir y ser válido."""
+def _parse_pyproject(path: Path) -> set[str]:
+    """Nombres canónicos de ``[project].dependencies`` en pyproject.toml."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    deps = data.get("project", {}).get("dependencies", [])
+    names: set[str] = set()
+    for dep in deps:
+        name = _requirement_name(dep)
+        if name:
+            names.add(name)
+    return names
 
-    def test_constraints_file_exists(self):
+
+def _constraint_lines(path: Path) -> list[str]:
+    """Líneas no vacías de constraints.txt (sin comentarios)."""
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def _dockerfile_stages(text: str) -> list[list[str]]:
+    """Parte el Dockerfile por ``^FROM``; devuelve las líneas de cada etapa."""
+    stages: list[list[str]] = []
+    current: list[str] | None = None
+    for line in text.splitlines():
+        if re.match(r"^FROM\b", line, re.IGNORECASE):
+            current = []
+            stages.append(current)
+            continue
+        if current is not None:
+            current.append(line)
+    return stages
+
+
+class TestConstraintsTxt:
+    """constraints.txt: existencia, formato y limpieza."""
+
+    def test_constraints_file_exists_and_is_utf8(self):
         assert CONSTRAINTS_TXT.exists(), "constraints.txt no existe"
+        content = CONSTRAINTS_TXT.read_text(encoding="utf-8")  # falla si no es UTF-8
+        assert content.strip(), "constraints.txt está vacío"
+        assert "\x00" not in content
+        # read_text normaliza CRLF por nuevas líneas universales: el CR se
+        # verifica sobre los bytes crudos.
+        assert b"\r" not in CONSTRAINTS_TXT.read_bytes(), (
+            "constraints.txt tiene finales de línea CRLF; debe ser LF"
+        )
 
-    def test_constraints_has_pinned_versions(self):
-        """constraints.txt debe tener versiones exactas (==)."""
-        content = CONSTRAINTS_TXT.read_text(encoding="utf-8")
-        lines = [l.strip() for l in content.splitlines() if l.strip() and not l.startswith("#")]
-        assert len(lines) > 0, "constraints.txt está vacío"
+    def test_every_constraint_is_exactly_pinned(self):
+        lines = _constraint_lines(CONSTRAINTS_TXT)
+        assert lines, "constraints.txt está vacío"
         for line in lines:
-            assert "==" in line, f"Línea sin versión exacta: {line}"
+            assert _PIN_RE.match(line), (
+                f"Línea sin pin exacto 'nombre==versión': {line!r}"
+            )
+            assert ">=" not in line and "~=" not in line and "*" not in line, (
+                f"Specifier no exacto en constraints: {line!r}"
+            )
 
-    def test_constraints_no_local_paths(self):
-        """No debe haber rutas locales ni hashes de ruedas."""
-        content = CONSTRAINTS_TXT.read_text(encoding="utf-8")
-        for line in content.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                assert not line.startswith("./"), f"Ruta local en constraints: {line}"
-                assert not line.startswith("/"), f"Ruta absoluta en constraints: {line}"
-                assert "file://" not in line, f"URL file:// en constraints: {line}"
-                assert "@" not in line or "@ " in line, f"Posible hash/URL en constraints: {line}"
+    def test_constraints_has_no_paths_urls_or_hashes(self):
+        forbidden = [" @ ", "file:", "://", "/", "\\", "--hash", "-e "]
+        for line in _constraint_lines(CONSTRAINTS_TXT):
+            for token in forbidden:
+                assert token not in line, (
+                    f"constraints.txt no debe contener {token!r}: {line!r}"
+                )
+            assert not re.match(r"^[A-Za-z]:", line), (
+                f"Ruta de Windows en constraints: {line!r}"
+            )
 
-
-class TestRequirementsTxtHasConstraints:
-    """requirements.txt debe referenciar constraints.txt."""
-
-    def test_requirements_starts_with_constraints(self):
-        content = REQUIREMENTS_TXT.read_text(encoding="utf-8").strip()
-        assert content.startswith("-c constraints.txt"), (
-            "requirements.txt debe empezar con '-c constraints.txt'"
+    def test_constraints_has_no_duplicate_packages(self):
+        pins = _parse_constraints(CONSTRAINTS_TXT)
+        lines = _constraint_lines(CONSTRAINTS_TXT)
+        assert len(lines) == len(pins), (
+            "constraints.txt tiene paquetes duplicados (comparación canónica "
+            f"PEP 503): {len(lines)} líneas vs {len(pins)} paquetes únicos"
         )
 
 
-class TestDependencyReconciliation:
-    """requirements.txt y pyproject.toml deben declarar lo mismo (runtime)."""
+class TestRequirementsAndPyproject:
+    """Coherencia requirements.txt ↔ constraints.txt ↔ pyproject.toml."""
 
-    # Paquetes que están solo en pyproject.toml como dependencias de build/dev
-    # y NO deben estar en requirements.txt (documentados como excepción).
-    PYTHON_ONLY_DEPS = {
-        "tenacity",  # en pyproject, no en requirements (transitiva de langchain)
-        "python-dateutil",  # en pyproject, no en requirements (transitiva)
-        "pyyaml",  # en pyproject, no en requirements (transitiva)
-        "orjson",  # en pyproject, no en requirements (transitiva de fastapi/starlette)
-        "openai",  # en pyproject, no en requirements (transitiva de langchain-openai)
-    }
+    def test_requirements_declares_constraints_first(self):
+        assert CONSTRAINTS_TXT.exists(), "constraints.txt no existe"
+        for line in REQUIREMENTS_TXT.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                assert line.strip() == "-c constraints.txt", (
+                    "La primera línea no vacía de requirements.txt debe ser "
+                    f"'-c constraints.txt'; es: {line.strip()!r}"
+                )
+                return
+        pytest.fail("requirements.txt está vacío")
 
-    # Paquetes que están solo en requirements.txt (tests/runtime) y no en pyproject.toml
-    REQUIREMENTS_ONLY_DEPS = {
-        "pytest",
-        "pytest-mock",
-        "pillow",
-        "langchain-community",  # en requirements, no en pyproject (transitiva de langchain)
-        "rank-bm25",
-        "rapidfuzz",
-        "pypdf",
-    }
-
-    def test_runtime_deps_match(self):
-        """Dependencias runtime declaradas en ambos archivos coinciden."""
-        req_deps = _parse_requirements_txt(REQUIREMENTS_TXT)
-        pyproject_deps = _parse_pyproject_toml_dependencies(PYPROJECT_TOML)
-
-        # Normalizar: quitar especifiers, solo nombres
-        req_names = set(req_deps.keys()) - self.REQUIREMENTS_ONLY_DEPS
-        pyproject_names = set(pyproject_deps.keys()) - self.PYTHON_ONLY_DEPS
-
-        missing_in_req = pyproject_names - req_names
-        missing_in_pyproject = req_names - pyproject_names
-
-        assert not missing_in_req, (
-            f"Dependencias en pyproject.toml pero no en requirements.txt: {sorted(missing_in_req)}"
-        )
-        assert not missing_in_pyproject, (
-            f"Dependencias en requirements.txt pero no en pyproject.toml: {sorted(missing_in_pyproject)}"
+    def test_every_requirements_package_is_pinned(self):
+        req = _parse_requirements(REQUIREMENTS_TXT)
+        constraints = set(_parse_constraints(CONSTRAINTS_TXT))
+        unpinned = req - constraints
+        assert unpinned == set(), (
+            "Paquetes de requirements.txt sin pin en constraints.txt: "
+            f"{sorted(unpinned)}"
         )
 
-    def test_constraints_covers_all_declared(self):
-        """constraints.txt debe cubrir todas las dependencias declaradas."""
-        req_deps = _parse_requirements_txt(REQUIREMENTS_TXT)
-        pyproject_deps = _parse_pyproject_toml_dependencies(PYPROJECT_TOML)
-        all_declared = set(req_deps.keys()) | set(pyproject_deps.keys())
+    def test_pyproject_runtime_deps_are_declared_in_requirements(self):
+        pyproject = _parse_pyproject(PYPROJECT_TOML)
+        req = _parse_requirements(REQUIREMENTS_TXT)
+        missing = pyproject - set(PYPROJECT_ONLY) - req
+        assert missing == set(), (
+            "Dependencias runtime de pyproject.toml ausentes en "
+            f"requirements.txt (y no documentadas en PYPROJECT_ONLY): "
+            f"{sorted(missing)}"
+        )
 
-        constraints = _parse_constraints_txt(CONSTRAINTS_TXT)
+    def test_divergence_allowlists_are_disjoint_and_not_stale(self):
+        req = _parse_requirements(REQUIREMENTS_TXT)
+        pyproject = _parse_pyproject(PYPROJECT_TOML)
 
-        missing = all_declared - set(constraints.keys())
-        # Permitir que falten paquetes solo de test que no se instalan en runtime
-        missing = missing - self.REQUIREMENTS_ONLY_DEPS
+        overlap = set(PYPROJECT_ONLY) & set(REQUIREMENTS_ONLY)
+        assert not overlap, f"Las allowlists se solapan: {sorted(overlap)}"
 
-        assert not missing, (
-            f"Dependencias declaradas sin versión en constraints.txt: {sorted(missing)}"
+        stale_pyproject = sorted(
+            name for name in PYPROJECT_ONLY
+            if name in req or name not in pyproject
+        )
+        assert not stale_pyproject, (
+            "PYPROJECT_ONLY desactualizada (ya no divergen; actualizá la "
+            f"allowlist o los archivos): {stale_pyproject}"
+        )
+
+        stale_requirements = sorted(
+            name for name in REQUIREMENTS_ONLY
+            if name in pyproject or name not in req
+        )
+        assert not stale_requirements, (
+            "REQUIREMENTS_ONLY desactualizada (ya no divergen; actualizá la "
+            f"allowlist o los archivos): {stale_requirements}"
         )
 
 
-class TestReproducibleBuild:
-    """Verificación de build reproducible (opcional, requiere Docker)."""
+class TestDockerfileAndImage:
+    """El build de la imagen respeta constraints.txt en ambas etapas."""
 
+    def test_dockerfile_installs_with_constraints_in_both_stages(self):
+        stages = _dockerfile_stages(DOCKERFILE.read_text(encoding="utf-8"))
+        assert len(stages) >= 2, "El Dockerfile debe tener builder y runtime"
+
+        stages_with_pip = 0
+        for stage in stages:
+            for idx, line in enumerate(stage):
+                if not (
+                    re.match(r"^\s*RUN\b", line, re.IGNORECASE)
+                    and "pip" in line
+                    and "-r requirements.txt" in line
+                ):
+                    continue
+                stages_with_pip += 1
+                copy_before = [
+                    prev
+                    for prev in stage[:idx]
+                    if re.match(r"^\s*COPY\b", prev, re.IGNORECASE)
+                    and "constraints.txt" in prev
+                ]
+                assert copy_before, (
+                    "Etapa con 'RUN ... pip ... -r requirements.txt' sin un "
+                    f"COPY de constraints.txt antes:\n{chr(10).join(stage)}"
+                )
+        assert stages_with_pip >= 2, (
+            "Se esperaban al menos 2 etapas que instalen con pip "
+            f"(builder y runtime); encontradas: {stages_with_pip}"
+        )
+
+    @pytest.mark.docker
     @pytest.mark.skipif(
-        not (REPO_ROOT / "Dockerfile").exists(),
-        reason="Dockerfile no existe aún",
+        os.environ.get("RUN_DOCKER_TESTS") != "1",
+        reason="Requiere RUN_DOCKER_TESTS=1 y Docker disponible",
     )
-    def test_docker_build_reproducible(self):
-        """Dos builds consecutivos producen el mismo pip freeze."""
-        import hashlib
+    def test_image_freeze_matches_constraints(self):
+        build = subprocess.run(
+            ["docker", "build", "-t", IMAGE_TAG, "."],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=1200,
+        )
+        assert build.returncode == 0, (
+            f"docker build falló (exit {build.returncode}):\n{build.stderr[-2000:]}"
+        )
 
-        def build_and_freeze(tag: str) -> str:
-            result = subprocess.run(
-                ["docker", "build", "--no-cache", "-t", tag, "."],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=600,
+        freeze_run = subprocess.run(
+            ["docker", "run", "--rm", "--entrypoint", "python", IMAGE_TAG,
+             "-m", "pip", "freeze"],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert freeze_run.returncode == 0, (
+            f"pip freeze en la imagen falló:\n{freeze_run.stderr[-2000:]}"
+        )
+
+        freeze: dict[str, str] = {}
+        for line in freeze_run.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            assert " @ " not in line and not line.startswith("-e "), (
+                f"pip freeze devolvió una línea no pineable: {line!r}"
             )
-            if result.returncode != 0:
-                pytest.skip(f"Build falló: {result.stderr[:500]}")
+            match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(===|==)([^\s;]+)", line)
+            assert match, f"Línea de pip freeze no parseable: {line!r}"
+            name = canon(match.group(1))
+            if name in _TOOLING:
+                continue
+            freeze[name] = match.group(3)
 
-            run_result = subprocess.run(
-                ["docker", "run", "--rm", tag, "pip", "freeze"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            return run_result.stdout.strip()
-
-        freeze1 = build_and_freeze("contafis-test-1")
-        freeze2 = build_and_freeze("contafis-test-2")
-
-        # Ordenar líneas para comparar
-        lines1 = sorted(freeze1.splitlines())
-        lines2 = sorted(freeze2.splitlines())
-
-        assert lines1 == lines2, "Build no reproducible: pip freeze difiere entre builds"
-
-        # Limpieza
-        subprocess.run(["docker", "rmi", "contafis-test-1", "contafis-test-2"], capture_output=True)
+        constraints = _parse_constraints(CONSTRAINTS_TXT)
+        assert freeze == constraints, (
+            "El pip freeze de la imagen no coincide con constraints.txt. "
+            f"En constraints pero no (o distinta versión) en la imagen: "
+            f"{ {k: v for k, v in constraints.items() if freeze.get(k) != v} }. "
+            f"En la imagen pero no (o distinta versión) en constraints: "
+            f"{ {k: v for k, v in freeze.items() if constraints.get(k) != v} }."
+        )
