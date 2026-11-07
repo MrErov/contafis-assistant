@@ -228,7 +228,7 @@
 
 ## F7: Corpus persistente
 
-- [ ] **T7 — Disco `/var/data`, manifiesto y ingesta one-off idempotente**
+- [x] **T7 — Disco `/var/data`, manifiesto y ingesta one-off idempotente**
 
   **Alcance:** que el corpus llegue a `corpus_status: ok` sin versionar PDFs ni
   re-embeder en cada deploy.

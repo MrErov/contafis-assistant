@@ -7,6 +7,7 @@ services:
     numInstances: 1
     autoDeploy: false
     plan: free
+    # preDeployCommand: "python -m scripts.ingest_if_needed"  # SOLO para planes paid (Starter+) con disco persistente /var/data
     envVars:
       # Secretos (se configuran en panel de Render, sync: false)
       - key: NVIDIA_API_KEY
@@ -78,3 +79,32 @@ services:
       - key: RECURSION_LIMIT
         value: "20"
         sync: false
+
+  # Servicio de producci\u00f3n (ejemplo, descomenta y ajusta al pasar a paid)
+  # - type: web
+  #   name: contafis-assistant-prod
+  #   runtime: docker
+  #   dockerfilePath: ./Dockerfile
+  #   healthCheckPath: /livez
+  #   numInstances: 2
+  #   autoDeploy: true
+  #   plan: starter  # Requiere plan paid para disco persistente y preDeployCommand
+  #   preDeployCommand: "python -m scripts.ingest_if_needed"
+  #   disk:
+  #     name: corpus-disk
+  #     mountPath: /var/data
+  #     sizeGB: 10
+  #   envVars:
+  #     # ... mismas variables pero con APP_ENV=production, ODOO_READONLY_ATTESTED=true
+  #     - key: APP_ENV
+  #       value: "production"
+  #       sync: false
+  #     - key: ODOO_READONLY_ATTESTED
+  #       value: "true"
+  #       sync: false
+  #     - key: CHROMA_PATH
+  #       value: "/var/data/chroma"
+  #       sync: false
+  #     - key: BM25_INDEX_PATH
+  #       value: "/var/data/bm25_index.json"
+  #       sync: false

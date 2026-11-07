@@ -250,3 +250,136 @@ Si sospechas que la URL se filtró o por política de rotación periódica:
 3. **Verifica**: haz un push trivial a `main` (ej. `git commit --allow-empty -m "chore: trigger deploy" && git push`) y confirma en Actions que el job `deploy` pasa y en Render que el deploy inicia
 
 > No hay ventana de vulnerabilidad: la URL vieja deja de funcionar al instante al regenerar.
+
+---
+
+## 12. Corpus Normativo \u2014 Layout en `/var/data` y Ingesta (Producci\u00f3n)
+
+> **Nota:** En Render **Free tier** NO hay disco persistente. El corpus se reconstruye
+> en cada deploy desde `data/manifest.json` y `data/corpus/` incluidos en la imagen Docker.
+> `GET /readyz` devolver\u00e1 `corpus_status: missing` o `empty` hasta que se ejecute la ingesta.
+> Esto es **esperado y correcto** para staging.
+
+> En planes **paid (Starter+)**, Render provee un **Persistent Disk** montado en `/var/data`.
+> El flujo de producci\u00f3n usa `preDeployCommand` en `render.yaml` para ejecutar
+> `scripts/ingest_if_needed.py` de forma idempotente antes de arrancar el servicio.
+
+### 12.1 Layout esperado en disco persistente (`/var/data`)
+
+```
+/var/data/
+├── manifest.json          # Copia del manifiesto (versi\u00f3n + hashes)
+├── bm25_index.json        # \u00cdndice BM25 generado por la ingesta
+└── chroma/                # Base de datos ChromaDB (vector store)
+    ├── chroma.sqlite3
+    └── <collection_uuid>/
+```
+
+**Variables de entorno en producci\u00f3n (paid):**
+| Variable | Valor |
+|---|---|
+| `CHROMA_PATH` | `/var/data/chroma` |
+| `BM25_INDEX_PATH` | `/var/data/bm25_index.json` |
+
+El manifiesto fuente sigue versionado en el repo como `data/manifest.json` (plantilla en `data/manifest.example.json`).
+Los PDFs **no** se versionan en git; se colocan manualmente en `/var/data/corpus/` en el disco persistente.
+
+### 12.2 Obtener y colocar los PDFs en producci\u00f3n
+
+1. **Descargar** los PDFs oficiales desde:
+   - Gaceta Oficial de Venezuela: `gacetaoficial.gob.ve`
+   - Asamblea Nacional: `asambleanacionaldevenezuela.org`
+   - SENIAT: `seniat.gob.ve` \u2192 Normativa Legal
+
+2. **Subir al disco persistente** (una sola vez, o tras borrar el disco):
+   - Opción A: SSH al servicio Render (paid plans) \u2192 `scp` o `rsync`
+   - Opción B: `render` CLI con `render disks upload` (si disponible)
+   - Opción C: Script one-off que descargue de bucket privado (fuera de scope T7)
+
+3. **Estructura en disco:**
+   ```
+   /var/data/corpus/
+   ├── ley-islr.pdf
+   └── providencia-seniat.pdf
+   ```
+
+### 12.3 Calcular SHA-256 y p\u00e1ginas para el manifiesto
+
+```powershell
+# SHA-256 de cada PDF (copiar el valor en min\u00fasculas al manifest)
+Get-FileHash -Algorithm SHA256 /var/data/corpus/ley-islr.pdf | Select-Object Hash
+```
+
+```python
+# N\u00famero de p\u00e1ginas y verificaci\u00f3n de texto extra\u00edble
+from pypdf import PdfReader
+r = PdfReader("/var/data/corpus/ley-islr.pdf")
+print(f"P\u00e1ginas: {len(r.pages)}")
+# Verificar que extrae texto (no PDF escaneado sin OCR)
+sample = r.pages[0].extract_text()
+print(f"Primeros 200 chars: {sample[:200]}")
+```
+
+### 12.4 Actualizar `manifest.json` en disco persistente
+
+1. Copiar `data/manifest.example.json` \u2192 `/var/data/manifest.json`
+2. Rellenar `sha256` reales de cada PDF (calculados arriba)
+3. Rellenar `pages` reales
+4. En `bm25_index_sha256` poner `0` * 64 (placeholder; la ingesta lo sobrescribe)
+
+### 12.5 Ejecutar la ingesta (idempotente)
+
+```bash
+# En el contenedor (via SSH o render shell)
+python -m scripts.ingest_if_needed
+# O con rutas expl\u00edcitas:
+python -m scripts.ingest_if_needed --manifest /var/data/manifest.json --chroma-path /var/data/chroma
+```
+
+**Salida esperada (primera vez):**
+```
+[ingest_if_needed] manifest=/var/data/manifest.json
+[ingest_if_needed] chroma_path=/var/data/chroma
+[ingest_if_needed] collection=contafis_normativa_v1
+[ingest_if_needed] Estado: chroma: missing (count=0)
+[ingest_if_needed] Ejecutando ingesta...
+documentos=2 chunks=314 bm25_version=1 sha256=a1b2c3d4...
+```
+
+**Salida esperada (deploy subsiguiente sin cambios):**
+```
+[ingest_if_needed] Estado: ok: version=1, chroma_count=314
+[ingest_if_needed] Corpus sincronizado \u2192 saltando ingesta (idempotente)
+```
+
+### 12.6 Verificar que el corpus qued\u00f3 cargado
+
+```bash
+curl -s https://contafis-assistant-prod.onrender.com/readyz
+# \u2192 {"status":"ready","corpus_version":1,"chroma_count":314,"corpus_status":"ok"}
+```
+
+### 12.7 Rotar modelo de embeddings (reingesta obligatoria)
+
+Si cambias `EMBEDDING_MODEL` o `EMBEDDING_DIMENSIONS`:
+
+1. Actualizar variables de entorno en Render
+2. Actualizar `dimensions` en `/var/data/manifest.json`
+3. Borrar colecci\u00f3n Chroma vieja: `rm -rf /var/data/chroma`
+4. Ejecutar ingesta: `python -m scripts.ingest_if_needed --force`
+5. Copiar el nuevo `sha256` del BM25 al `manifest.json`
+6. Reiniciar servicio (auto-deploy o manual)
+
+---
+
+## 13. Checklist de Deploy a Producci\u00f3n (Paid)
+
+- [ ] Plan Render **Starter o superior** (requerido para disco persistente)
+- [ ] Disco persistente creado y montado en `/var/data` (configurado en `render.yaml` \u2192 `disk`)
+- [ ] `CHROMA_PATH=/var/data/chroma` y `BM25_INDEX_PATH=/var/data/bm25_index.json` en variables de entorno
+- [ ] `preDeployCommand: "python -m scripts.ingest_if_needed"` habilitado en `render.yaml`
+- [ ] PDFs subidos a `/var/data/corpus/`
+- [ ] `/var/data/manifest.json` creado con hashes y p\u00e1ginas reales
+- [ ] Primer deploy ejecuta ingesta autom\u00e1ticamente v\u00eda `preDeployCommand`
+- [ ] `/readyz` devuelve `corpus_status: ok` y `chroma_count > 0`
+- [ ] Smoke test chat funcional

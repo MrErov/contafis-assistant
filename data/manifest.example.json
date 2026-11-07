@@ -1,0 +1,29 @@
+{
+  "bm25_index_version": 1,
+  "bm25_index_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "dimensions": 2048,
+  "documents": [
+    {
+      "id": "ley-islr",
+      "title": "Ley de Impuesto sobre la Renta",
+      "version": "2014",
+      "file": "corpus/ley-islr.pdf",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "pages": 120,
+      "published_at": "2014-08-05",
+      "language": "es",
+      "origin": "Gaceta Oficial N\u00ba 6.152 Extraordinario"
+    },
+    {
+      "id": "providencia-seniat",
+      "title": "Providencia SNAT/2019/000009",
+      "version": "2019",
+      "file": "corpus/providencia-seniat.pdf",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "pages": 40,
+      "published_at": "2019-03-11",
+      "language": "es",
+      "origin": "SENIAT"
+    }
+  ]
+}
