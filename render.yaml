@@ -1,0 +1,80 @@
+services:
+  - type: web
+    name: contafis-assistant-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /livez
+    numInstances: 1
+    autoDeploy: false
+    plan: free
+    envVars:
+      # Secretos (se configuran en panel de Render, sync: false)
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_API_KEY
+        sync: false
+      - key: ODOO_PASSWORD
+        sync: false
+      - key: API_SHARED_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # Valores literales (sync: false para que no se sobrescriban en panel)
+      - key: LANGSMITH_PROJECT
+        value: "contafis-assistant"
+        sync: false
+      - key: LANGSMITH_ENDPOINT
+        value: "https://api.smith.langchain.com"
+        sync: false
+      - key: LANGSMITH_TRACING
+        value: "true"
+        sync: false
+      - key: LANGSMITH_HIDE_CONTENT
+        value: "false"
+        sync: false
+      - key: ODOO_PROTOCOL
+        value: "json2"
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: "nvidia/nemotron-3-embed-1b"
+        sync: false
+      - key: EMBEDDING_DIMENSIONS
+        value: "2048"
+        sync: false
+      - key: APP_ENV
+        value: "development"
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: "https://integrate.api.nvidia.com/v1"
+        sync: false
+      - key: LLM_MODEL
+        value: "meta/llama-3.2-90b-vision-instruct"
+        sync: false
+      - key: CHROMA_PATH
+        value: "./data/chroma"
+        sync: false
+      - key: ODOO_READONLY_ATTESTED
+        value: "false"
+        sync: false
+      - key: ODOO_TIMEOUT_SECONDS
+        value: "15"
+        sync: false
+      - key: SCOPE_CHECK_TTL_SECONDS
+        value: "300"
+        sync: false
+      - key: MAX_MESSAGE_CHARS
+        value: "4000"
+        sync: false
+      - key: MAX_TOOL_CALLS
+        value: "8"
+        sync: false
+      - key: RECURSION_LIMIT
+        value: "20"
+        sync: false

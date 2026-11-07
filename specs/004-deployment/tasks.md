@@ -174,7 +174,7 @@
 
 ## F5: Blueprint de Render
 
-- [ ] **T5 — `render.yaml` + `docs/DEPLOY.md` para staging**
+- [x] **T5 — `render.yaml` + `docs/DEPLOY.md` para staging**
 
   **Alcance:** desplegar staging en Render con el contrato de env correcto y health
   check funcional.
