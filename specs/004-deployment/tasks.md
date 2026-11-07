@@ -87,7 +87,7 @@
 
 ## F2: Reproducibilidad
 
-- [ ] **T2 — Fijar dependencias y reconciliar `requirements.txt` con `pyproject.toml`**
+- [x] **T2 — Fijar dependencias y reconciliar `requirements.txt` con `pyproject.toml`**
 
   **Alcance:** que dos builds del mismo commit instalen exactamente las mismas versiones.
 

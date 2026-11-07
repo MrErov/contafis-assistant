@@ -719,7 +719,7 @@ Suite completa esperada: **0 failed**, conteo ≥ 686 (`docs/memory.md:7`).
 
 | ID | Pregunta | Bloquea |
 |---|---|---|
-| **OQ-1** | ¿Plan/región de Render y tamaño de disco (1 GB inicial)? ¿Se acepta el costo de un plan pago para staging con disco? | T5, T7 |
+| **OQ-1** | ¿Plan/región de Render y tamaño de disco (1 GB inicial)? ¿Se acepta el costo de un plan pago para staging con disco? | **Resuelto**: Diferido a T7/T8. Staging inicial en plan Free (sin disco, solo `/livez`); producción en plan Starter (o superior) con disco 1 GB persistente para corpus. La decisión final de plan/región se tomará cuando exista el corpus (T7) y se valide la atestación read-only (T8). | T7, T8 |
 | **OQ-2** | ¿Cuál es el canal autorizado para depositar PDFs en el disco (bucket privado, repo privado, job con descarga firmada)? | T7 (bloqueante para `corpus_status: ok`) |
 | **OQ-3** | ¿Se requiere `RENDER_API_KEY` para consultar el estado del deploy y automatizar rollback, o basta el hook + verificación manual de `/livez`? | T6, T10 |
 | **OQ-4** | ¿Odoo 19 de producción es públicamente accesible desde Render (TLS, allowlist, IP estática de egress)? | T8 |
