@@ -206,7 +206,7 @@
 
 ## F6: Deploy hook
 
-- [ ] **T6 — Job `deploy` por hook, solo en `main`**
+- [x] **T6 — Job `deploy` por hook, solo en `main`**
 
   **Alcance:** que el deploy se dispare automáticamente solo tras CI verde en `main`.
 

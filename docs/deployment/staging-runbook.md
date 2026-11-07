@@ -207,3 +207,46 @@ Cuando se pase a plan de pago con disco persistente:
 - [ ] Traza visible en LangSmith
 - [ ] Logs sin errores 5xx ni warnings críticos
 - [ ] Rollback plan confirmado (commit anterior identificable)
+
+---
+
+## 11. Deploy Automático desde CI (GitHub Actions → Render)
+
+El pipeline CI/CD dispara el deploy a Render **solo** cuando:
+- Hay un `push` a la rama `main` (no en PRs)
+- Los jobs `test` e `image` terminan exitosos (verdes)
+
+El disparo se hace mediante **Deploy Hook** de Render: una URL secreta que acepta `POST` para iniciar un deploy manual.
+
+### 11.1 Obtener el Deploy Hook URL en Render Dashboard
+
+1. En Render Dashboard, selecciona el servicio `contafis-assistant-staging` (o producción)
+2. Ve a **Settings** → **Deploy Hook**
+3. Copia la URL completa (formato: `https://api.render.com/deploy/srv-XXXXXX?key=YYYYYY`)
+4. **No** la compartas ni la comitees; es un secreto equivalente a una API key
+
+> ⚠️ El hook no requiere `RENDER_API_KEY`; la URL **contiene** el token. Trátala como secreto.
+
+### 11.2 Crear el secret `RENDER_DEPLOY_HOOK_URL` en GitHub
+
+1. En el repo GitHub: **Settings** → **Secrets and variables** → **Actions**
+2. Pestaña **Environments** → selecciona **production** (o créalo si no existe)
+3. **Environment secrets** → **Add secret**
+   - Name: `RENDER_DEPLOY_HOOK_URL`
+   - Value: pega la URL copiada del paso 11.1
+4. Save
+
+> El workflow usa `environment: production`, por lo que el secret **debe** estar en el Environment `production`, no en "Repository secrets".
+
+### 11.3 Rotar el Deploy Hook (regenerar + actualizar)
+
+Si sospechas que la URL se filtró o por política de rotación periódica:
+
+1. **En Render Dashboard** (servicio → Settings → Deploy Hook):
+   - Clic en **Regenerate** → se genera una nueva URL, la anterior queda inválida inmediatamente
+   - Copia la nueva URL
+2. **En GitHub** (Settings → Environments → production → Environment secrets):
+   - Edita el secret `RENDER_DEPLOY_HOOK_URL` → pega la nueva URL → Save
+3. **Verifica**: haz un push trivial a `main` (ej. `git commit --allow-empty -m "chore: trigger deploy" && git push`) y confirma en Actions que el job `deploy` pasa y en Render que el deploy inicia
+
+> No hay ventana de vulnerabilidad: la URL vieja deja de funcionar al instante al regenerar.
