@@ -10,6 +10,39 @@ from contafis_assistant.domain.enums import CorpusStatus
 from contafis_assistant.rag.bm25 import Bm25Document, Bm25Index
 from contafis_assistant.rag.manifest import load_manifest
 
+try:
+    from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+    from langchain_community.document_loaders import MarkdownLoader as LangchainMarkdownLoader
+except ImportError:
+    try:
+        from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+        from langchain_community.document_loaders import MarkdownLoader as LangchainMarkdownLoader
+    except ImportError:
+        MarkdownHeaderTextSplitter = None
+        RecursiveCharacterTextSplitter = None
+        LangchainMarkdownLoader = None
+
+# Fallback simple markdown loader if langchain_community is not available
+class SimpleMarkdownLoader:
+    """Simple markdown loader without external dependencies."""
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+    
+    def load(self):
+        with open(self.file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        class Doc:
+            def __init__(self, page_content):
+                self.page_content = page_content
+        # Return content as-is, preserving markdown headers for the splitter
+        return [Doc(content)]
+
+# Use langchain's MarkdownLoader if available, otherwise use our simple fallback
+if LangchainMarkdownLoader is not None:
+    MarkdownLoader = LangchainMarkdownLoader
+else:
+    MarkdownLoader = SimpleMarkdownLoader
+
 
 class IngestError(RuntimeError):
     pass
@@ -50,6 +83,26 @@ def extract_pdf_pages(path: str | Path) -> list[IngestPage]:
     pages: list[IngestPage] = []
     for index, page in enumerate(reader.pages, start=1):
         pages.append(IngestPage(page=index, text=page.extract_text() or ""))
+    return pages
+
+
+def extract_markdown_pages(path: str | Path) -> list[IngestPage]:
+    """Extrae páginas de un archivo Markdown como IngestPage."""
+    if MarkdownLoader is None:
+        raise RuntimeError(
+            "langchain no está disponible; instale langchain para cargar archivos Markdown"
+        )
+    try:
+        loader = MarkdownLoader(str(path))
+        docs = loader.load()
+    except ImportError as exc:
+        raise RuntimeError(
+            "langchain_community no está disponible; instale con `pip install langchain-community`"
+        ) from exc
+    
+    pages: list[IngestPage] = []
+    for index, doc in enumerate(docs, start=1):
+        pages.append(IngestPage(page=index, text=doc.page_content or ""))
     return pages
 
 
@@ -98,6 +151,156 @@ def chunk_pages(
             if position + chunk_chars >= len(text):
                 break
             position += step
+    return chunks
+
+
+def extract_markdown_pages(path: str | Path) -> list[IngestPage]:
+    """Extrae páginas de un archivo Markdown como IngestPage."""
+    if MarkdownLoader is None:
+        raise RuntimeError(
+            "langchain no está disponible; instale langchain para cargar archivos Markdown"
+        )
+    try:
+        loader = MarkdownLoader(str(path))
+        docs = loader.load()
+    except ImportError as exc:
+        raise RuntimeError(
+            "langchain_community no está disponible; instale con `pip install langchain-community`"
+        ) from exc
+    
+    pages: list[IngestPage] = []
+    for index, doc in enumerate(docs, start=1):
+        pages.append(IngestPage(page=index, text=doc.page_content or ""))
+    return pages
+
+
+def chunk_markdown(
+    document_id: str,
+    title: str,
+    pages: Sequence[IngestPage],
+    *,
+    chunk_chars: int = 1000,
+    chunk_overlap: int = 200,
+    collection: str | None = None,
+) -> list[IngestChunk]:
+    """
+    Trocea contenido Markdown usando MarkdownHeaderTextSplitter seguido de
+    RecursiveCharacterTextSplitter para párrafos muy largos.
+    
+    Los headers (#, ##, ###) se preservan en los metadatos y se inyectan
+    en el contenido del chunk para mejor contexto.
+    """
+    # Debug: print the pages to see what's being passed
+    print(f"DEBUG chunk_markdown: pages = {pages}")
+    for p in pages:
+        print(f"  Page {p.page}: {p.text[:200]}")
+    # Import here to avoid module caching issues with pytest
+    try:
+        from langchain_text_splitters import MarkdownHeaderTextSplitter as MH, RecursiveCharacterTextSplitter as RC
+    except ImportError:
+        try:
+            from langchain.text_splitter import MarkdownHeaderTextSplitter as MH, RecursiveCharacterTextSplitter as RC
+        except ImportError:
+            MH = None
+            RC = None
+    
+    MarkdownHeaderTextSplitter = MH
+    RecursiveCharacterTextSplitter = RC
+    
+    if MarkdownHeaderTextSplitter is None or RecursiveCharacterTextSplitter is None:
+        raise RuntimeError(
+            "langchain_text_splitters no está disponible; instale langchain-text-splitters"
+        )
+    
+    if chunk_chars <= 0:
+        raise ValueError("chunk_chars debe ser positivo")
+    if chunk_overlap < 0 or chunk_overlap >= chunk_chars:
+        raise ValueError("chunk_overlap debe estar entre 0 y chunk_chars")
+    
+    # Unir todo el texto de las páginas preservando newlines para que el splitter detecte headers
+    full_text = "\n\n".join(
+        page.text for page in pages if page.text
+    )
+    
+    if not full_text.strip():
+        return []
+    
+    # Primer paso: dividir por headers de Markdown
+    header_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[
+            ("#", "header1"),
+            ("##", "header2"),
+            ("###", "header3"),
+        ],
+        strip_headers=False,
+    )
+    
+    print(f"DEBUG: full_text = {repr(full_text)}")
+    header_chunks = header_splitter.split_text(full_text)
+    print(f"DEBUG: header_chunks = {header_chunks}")
+    for i, hc in enumerate(header_chunks):
+        print(f"  header_chunk {i}: metadata={hc.metadata}, text={hc.page_content[:100]}")
+    
+    # Segundo paso: subdividir chunks largos con RecursiveCharacterTextSplitter
+    recursive_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_chars,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
+        keep_separator=True,
+    )
+    
+    chunks: list[IngestChunk] = []
+    chunk_index = 0
+    
+    for header_chunk in header_chunks:
+        # El chunk ya tiene metadata con los headers
+        header_metadata = header_chunk.metadata.copy()
+        print(f"DEBUG: header_metadata = {header_metadata}")
+        header_text = header_chunk.page_content
+        
+        # Si el chunk es muy largo, subdividirlo
+        if len(header_text) > chunk_chars:
+            sub_chunks = recursive_splitter.split_text(header_text)
+            for sub_chunk in sub_chunks:
+                metadata: dict[str, Any] = {
+                    "document_id": document_id,
+                    "document": title,
+                    "locator": "markdown",
+                }
+                if collection:
+                    metadata["collection"] = collection
+                # Preservar headers en metadata
+                metadata.update(header_metadata)
+                
+                chunks.append(
+                    IngestChunk(
+                        chunk_id=f"{document_id}:md:c{chunk_index}",
+                        document_id=document_id,
+                        text=sub_chunk,
+                        metadata=metadata,
+                    )
+                )
+                chunk_index += 1
+        else:
+            metadata: dict[str, Any] = {
+                "document_id": document_id,
+                "document": title,
+                "locator": "markdown",
+            }
+            if collection:
+                metadata["collection"] = collection
+            metadata.update(header_metadata)
+            
+            chunks.append(
+                IngestChunk(
+                    chunk_id=f"{document_id}:md:c{chunk_index}",
+                    document_id=document_id,
+                    text=header_text,
+                    metadata=metadata,
+                )
+            )
+            chunk_index += 1
+    
     return chunks
 
 
@@ -190,7 +393,6 @@ def ingest_corpus(
         )
     expected_dimensions = manifest.dimensions
     index_version = version if version is not None else manifest.bm25_index_version
-    extract = extractor or extract_pdf_pages
 
     if collection is None and chroma_path is not None:
         collection = create_chroma_collection(
@@ -200,6 +402,16 @@ def ingest_corpus(
     all_chunks: list[IngestChunk] = []
     for document in manifest.documents:
         document_path = path.parent / document.file
+        
+        # Determinar el extractor según la extensión del archivo
+        suffix = document_path.suffix.lower()
+        if suffix == ".md":
+            extract = extractor or extract_markdown_pages
+            chunker = chunk_markdown
+        else:
+            extract = extractor or extract_pdf_pages
+            chunker = chunk_pages
+        
         raw_pages = list(extract(document_path))
         pages: list[IngestPage] = []
         for position, raw_page in enumerate(raw_pages, start=1):
@@ -210,7 +422,7 @@ def ingest_corpus(
             else:
                 raise IngestError("El extractor devolvió un tipo de página no soportado")
 
-        chunks = chunk_pages(
+        chunks = chunker(
             document.id,
             document.title,
             pages,

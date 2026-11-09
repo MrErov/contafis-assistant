@@ -18,6 +18,8 @@ chromadb
 rank-bm25
 rapidfuzz
 pypdf
+pdf-inspector
+unstructured
 
 # HTTP, contratos y configuración
 httpx

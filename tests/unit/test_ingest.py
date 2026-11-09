@@ -15,6 +15,8 @@ from contafis_assistant.rag.ingest import (
     IngestPage,
     build_default_embedder,
     create_chroma_collection,
+    extract_markdown_pages,
+    chunk_markdown,
     ingest_corpus,
 )
 
@@ -235,3 +237,71 @@ def test_load_settings_without_env_file_still_works(settings_env, monkeypatch, t
     settings = ingest_cli._load_settings()
 
     assert settings.embedding_model == "embedding-test"
+
+
+# --- procesamiento de Markdown ---------------------------------------------------
+
+
+def _markdown_manifest(tmp_path, *, dimensions: int = 2, bm25_sha: str = "a" * 64):
+    md = tmp_path / "doc-1.md"
+    content = "# Título Principal\n\n## Sección 1\n\nTexto de la sección 1.\n\n## Sección 2\n\nTexto de la sección 2."
+    md.write_text(content, encoding="utf-8")
+    # Calcular el sha256 real del contenido
+    content_sha = sha256(content.encode("utf-8")).hexdigest()
+    payload = {
+        "bm25_index_version": 1,
+        "bm25_index_sha256": "b" * 64,
+        "dimensions": dimensions,
+        "documents": [
+            {
+                "id": "doc-md-1",
+                "title": "Norma Markdown",
+                "version": "2024.1",
+                "file": "doc-1.md",
+                "sha256": content_sha,
+                "pages": 1,
+                "published_at": "2024-01-01",
+                "language": "es",
+                "origin": "Test",
+            }
+        ],
+    }
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_extract_markdown_pages_loads_content(tmp_path):
+    """extract_markdown_pages carga el contenido de un archivo .md."""
+    md = tmp_path / "test.md"
+    md.write_text("# Hola\n\nContenido.", encoding="utf-8")
+    
+    pages = extract_markdown_pages(md)
+    
+    assert len(pages) == 1
+    assert "Hola" in pages[0].text
+    assert "Contenido" in pages[0].text
+
+
+def test_ingest_markdown_file_is_chunked_by_headers(tmp_path):
+    """Un archivo .md se trocea por headers y se indexa con metadata de headers."""
+    md = tmp_path / "doc-1.md"
+    # Create the markdown file first
+    content = "# Título Principal\n\n## Sección 1\n\nTexto de la sección 1.\n\n## Sección 2\n\nTexto de la sección 2."
+    md.write_text(content, encoding="utf-8")
+    
+    pages = extract_markdown_pages(md)
+    chunks = chunk_markdown(
+        "doc-md-1",
+        "Norma Markdown",
+        pages,
+        chunk_chars=1000,
+        chunk_overlap=200,
+        collection="col",
+    )
+    
+    # Verify chunks have header metadata
+    assert len(chunks) > 0
+    for chunk in chunks:
+        assert "document_id" in chunk.metadata
+        assert "header1" in chunk.metadata or "header2" in chunk.metadata or "header3" in chunk.metadata
