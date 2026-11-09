@@ -235,6 +235,68 @@ def test_empty_chroma_collection_is_empty(tmp_path):
     assert state.status == CorpusStatus.empty
 
 
+def test_local_vector_backend_opens_collection_from_disk(tmp_path):
+    from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+    index = _index()
+    manifest = _manifest(tmp_path, index)
+    bm25_path = _save_index(tmp_path, index)
+    vectors_path = tmp_path / "vectors"
+    collection = LocalVectorCollection(vectors_path, "col", dimensions=DIMENSIONS)
+    collection.add(
+        ids=["c1"],
+        embeddings=[[1.0, 0.0]],
+        documents=["iva impuesto al valor agregado"],
+        metadatas=[{"document_id": "doc-1"}],
+    )
+
+    manager = CorpusManager(
+        manifest_path=manifest,
+        bm25_path=bm25_path,
+        expected_version=1,
+        chroma_path=vectors_path,
+        collection_name="col",
+        vector_backend="local",
+    )
+    state = manager.open()
+
+    assert state.chroma_status == CorpusStatus.ok
+    assert state.status == CorpusStatus.ok
+    assert manager.collection is not None
+    assert manager.collection.count() == 1
+
+
+def test_explicit_vector_backend_wins_over_settings(tmp_path):
+    from types import SimpleNamespace
+
+    from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+    index = _index()
+    manifest = _manifest(tmp_path, index)
+    bm25_path = _save_index(tmp_path, index)
+    vectors_path = tmp_path / "vectors"
+    LocalVectorCollection(vectors_path, "col", dimensions=DIMENSIONS).add(
+        ids=["c1"],
+        embeddings=[[1.0, 0.0]],
+        documents=["iva impuesto al valor agregado"],
+        metadatas=[{"document_id": "doc-1"}],
+    )
+    settings = SimpleNamespace(
+        bm25_index_path=str(bm25_path),
+        chroma_path=str(vectors_path),
+        chroma_collection="col",
+        bm25_index_version=1,
+        embedding_dimensions=DIMENSIONS,
+        vector_backend="chroma",
+    )
+
+    manager = CorpusManager(settings=settings, vector_backend="local")
+    state = manager.open()
+
+    assert state.chroma_status == CorpusStatus.ok
+    assert state.status == CorpusStatus.ok
+
+
 @pytest.mark.parametrize(
     "scenario",
     [

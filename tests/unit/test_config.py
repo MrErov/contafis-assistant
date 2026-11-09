@@ -19,6 +19,7 @@ def test_defaults_follow_rnf_003(settings_env):
     assert settings.llm_timeout_seconds == 60
     assert settings.retrieval_timeout_seconds == 10
     assert settings.chroma_collection == "contafis_normativa_v1"
+    assert settings.vector_backend == "chroma"
     assert settings.bm25_index_path == "data/bm25_index.json"
     assert settings.bm25_index_version == 1
     assert settings.retrieval_dense_top_k == 10
@@ -104,6 +105,19 @@ def test_loopback_host_does_not_require_secret(settings_env):
 
 def test_invalid_app_env_fails(settings_env):
     settings_env.setenv("APP_ENV", "staging")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_vector_backend_accepts_local(settings_env):
+    settings_env.setenv("VECTOR_BACKEND", "local")
+    settings = Settings(_env_file=None)
+
+    assert settings.vector_backend == "local"
+
+
+def test_invalid_vector_backend_fails(settings_env):
+    settings_env.setenv("VECTOR_BACKEND", "faiss")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 

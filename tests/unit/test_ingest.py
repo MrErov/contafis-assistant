@@ -13,8 +13,10 @@ from contafis_assistant.rag import ingest_cli
 from contafis_assistant.rag.ingest import (
     IngestError,
     IngestPage,
+    IngestResult,
     build_default_embedder,
     create_chroma_collection,
+    create_vector_collection,
     extract_markdown_pages,
     chunk_markdown,
     ingest_corpus,
@@ -206,6 +208,44 @@ def test_create_chroma_collection_declares_dimensions(monkeypatch):
     assert recorded["metadata"] == {"hnsw:space": "cosine", "dimensions": 2048}
 
 
+# --- selección del backend vectorial ---------------------------------------
+
+
+def test_create_vector_collection_dispatches_to_local(tmp_path):
+    from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+    collection = create_vector_collection(
+        tmp_path / "vectors", "contafis_normativa_v1", dimensions=2, backend="local"
+    )
+
+    assert isinstance(collection, LocalVectorCollection)
+    assert collection.count() == 0
+
+
+def test_create_vector_collection_rejects_unknown_backend(tmp_path):
+    with pytest.raises(ValueError, match="VECTOR_BACKEND"):
+        create_vector_collection(tmp_path / "vectors", "col", backend="faiss")
+
+
+def test_ingest_corpus_creates_the_selected_backend_collection(tmp_path):
+    from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+    manifest = _manifest(tmp_path)
+
+    result = ingest_corpus(
+        manifest,
+        extractor=_extractor,
+        embedder=_RecordingEmbedder(),
+        chroma_path=tmp_path / "vectors",
+        collection_name="col",
+        vector_backend="local",
+        version=1,
+    )
+
+    assert result.chunks > 0
+    assert LocalVectorCollection(tmp_path / "vectors", "col").count() == result.chunks
+
+
 # --- .env de la CLI ---------------------------------------------------------
 
 
@@ -237,6 +277,34 @@ def test_load_settings_without_env_file_still_works(settings_env, monkeypatch, t
     settings = ingest_cli._load_settings()
 
     assert settings.embedding_model == "embedding-test"
+
+
+def test_ingest_cli_uses_configured_vector_backend(settings_env, monkeypatch, tmp_path):
+    """La CLI crea la colección con el backend elegido en Settings."""
+    settings_env.setenv("VECTOR_BACKEND", "local")
+    settings_env.setenv("CHROMA_PATH", str(tmp_path / "vectors"))
+    recorded: dict[str, object] = {}
+
+    def fake_create(path, name, *, dimensions=None, backend="chroma"):
+        recorded["path"] = path
+        recorded["name"] = name
+        recorded["backend"] = backend
+        return object()
+
+    def fake_ingest(manifest_path, **kwargs):
+        recorded["collection"] = kwargs.get("collection")
+        return IngestResult(document_ids=["doc-1"], chunks=1)
+
+    monkeypatch.setattr(ingest_cli, "create_vector_collection", fake_create)
+    monkeypatch.setattr(ingest_cli, "ingest_corpus", fake_ingest)
+    monkeypatch.setattr(ingest_cli, "build_default_embedder", lambda *a, **k: object())
+
+    exit_code = ingest_cli.main(["--manifest", str(tmp_path / "manifest.json")])
+
+    assert exit_code == 0
+    assert recorded["backend"] == "local"
+    assert recorded["path"] == str(tmp_path / "vectors")
+    assert recorded["collection"] is not None
 
 
 # --- procesamiento de Markdown ---------------------------------------------------

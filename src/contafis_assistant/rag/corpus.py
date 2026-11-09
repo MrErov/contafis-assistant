@@ -56,6 +56,26 @@ def open_chroma_collection(path: str | Path, collection_name: str) -> Any:
     return client.get_collection(name=collection_name)
 
 
+def open_vector_collection(
+    path: str | Path,
+    collection_name: str,
+    *,
+    backend: str = "chroma",
+    dimensions: int | None = None,
+) -> Any:
+    """Abre la colección con el backend configurado (``chroma`` o ``local``)."""
+    normalized = (backend or "chroma").strip().lower()
+    if normalized == "chroma":
+        return open_chroma_collection(path, collection_name)
+    if normalized == "local":
+        from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+        return LocalVectorCollection(path, collection_name, dimensions=dimensions)
+    raise ValueError(
+        f"VECTOR_BACKEND='{backend}' no soportado; use 'chroma' o 'local'"
+    )
+
+
 class CorpusManager:
     def __init__(
         self,
@@ -68,12 +88,17 @@ class CorpusManager:
         expected_version: int | None = None,
         expected_sha256: str | None = None,
         chroma_opener: Callable[[str | Path, str], Any] | None = None,
+        vector_backend: str | None = None,
     ) -> None:
+        self._vector_dimensions: int | None = None
         if settings is not None:
             bm25_path = bm25_path or settings.bm25_index_path
             chroma_path = chroma_path or settings.chroma_path
             collection_name = collection_name or settings.chroma_collection
             expected_version = expected_version if expected_version is not None else settings.bm25_index_version
+            if vector_backend is None:
+                vector_backend = getattr(settings, "vector_backend", "chroma")
+            self._vector_dimensions = getattr(settings, "embedding_dimensions", None)
 
         self._bm25_path = Path(bm25_path or "data/bm25_index.json")
         self._manifest_path = (
@@ -85,7 +110,15 @@ class CorpusManager:
         self._collection_name = collection_name or "contafis_normativa_v1"
         self._expected_version = expected_version if expected_version is not None else 1
         self._expected_sha256 = expected_sha256
-        self._chroma_opener = chroma_opener or open_chroma_collection
+        self._vector_backend = vector_backend or "chroma"
+        self._chroma_opener = chroma_opener or (
+            lambda path, name: open_vector_collection(
+                path,
+                name,
+                backend=self._vector_backend,
+                dimensions=self._vector_dimensions,
+            )
+        )
 
         self._opened = False
         self._state: CorpusState | None = None
@@ -133,19 +166,19 @@ class CorpusManager:
 
     def _open_chroma(self) -> tuple[CorpusStatus, Any | None, str | None]:
         if self._chroma_path is None:
-            return CorpusStatus.missing, None, "ruta de Chroma no configurada"
+            return CorpusStatus.missing, None, "ruta de la colección vectorial no configurada"
         try:
             collection = self._chroma_opener(self._chroma_path, self._collection_name)
         except Exception as exc:
             return CorpusStatus.missing, None, str(exc)
         if collection is None:
-            return CorpusStatus.missing, None, "colección Chroma ausente"
+            return CorpusStatus.missing, None, "colección vectorial ausente"
         try:
             count = int(collection.count())
         except Exception as exc:
             return CorpusStatus.missing, None, str(exc)
         if count <= 0:
-            return CorpusStatus.empty, collection, "colección Chroma vacía"
+            return CorpusStatus.empty, collection, "colección vectorial vacía"
         return CorpusStatus.ok, collection, None
 
     def open(self) -> CorpusState:
@@ -155,6 +188,8 @@ class CorpusManager:
 
         self._manifest_state = load_manifest(self._manifest_path)
         manifest = self._manifest_state.manifest
+        if manifest is not None:
+            self._vector_dimensions = manifest.dimensions
 
         expected_version = (
             manifest.bm25_index_version if manifest is not None else self._expected_version
@@ -181,7 +216,7 @@ class CorpusManager:
             warnings.append(_warning(WarningCode.corpus_unavailable, "El índice BM25 no está disponible."))
         if chroma_status != CorpusStatus.ok:
             warnings.append(
-                _warning(WarningCode.corpus_unavailable, chroma_error or "La colección Chroma no está disponible.")
+                _warning(WarningCode.corpus_unavailable, chroma_error or "La colección vectorial no está disponible.")
             )
 
         deduped: list[Warning] = []

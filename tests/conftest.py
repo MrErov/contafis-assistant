@@ -44,7 +44,7 @@ _ENV_PREFIXES = (
     "MEMORY_",
     "SCOPE_",
 )
-_ENV_EXACT = {"APP_ENV"}
+_ENV_EXACT = {"APP_ENV", "VECTOR_BACKEND"}
 
 
 def _is_loopback(address):

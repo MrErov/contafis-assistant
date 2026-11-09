@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # Corpus y retrieval
     chroma_path: str
     chroma_collection: str = "contafis_normativa_v1"
+    vector_backend: Literal["chroma", "local"] = "chroma"
     bm25_index_path: str = "data/bm25_index.json"
     bm25_index_version: int = 1
     retrieval_dense_top_k: int = 10

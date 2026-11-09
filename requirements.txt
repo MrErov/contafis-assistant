@@ -15,6 +15,7 @@ uvicorn
 
 # Retrieval
 chromadb
+numpy
 rank-bm25
 rapidfuzz
 pypdf

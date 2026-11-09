@@ -154,26 +154,6 @@ def chunk_pages(
     return chunks
 
 
-def extract_markdown_pages(path: str | Path) -> list[IngestPage]:
-    """Extrae páginas de un archivo Markdown como IngestPage."""
-    if MarkdownLoader is None:
-        raise RuntimeError(
-            "langchain no está disponible; instale langchain para cargar archivos Markdown"
-        )
-    try:
-        loader = MarkdownLoader(str(path))
-        docs = loader.load()
-    except ImportError as exc:
-        raise RuntimeError(
-            "langchain_community no está disponible; instale con `pip install langchain-community`"
-        ) from exc
-    
-    pages: list[IngestPage] = []
-    for index, doc in enumerate(docs, start=1):
-        pages.append(IngestPage(page=index, text=doc.page_content or ""))
-    return pages
-
-
 def chunk_markdown(
     document_id: str,
     title: str,
@@ -190,11 +170,8 @@ def chunk_markdown(
     Los headers (#, ##, ###) se preservan en los metadatos y se inyectan
     en el contenido del chunk para mejor contexto.
     """
-    # Debug: print the pages to see what's being passed
-    print(f"DEBUG chunk_markdown: pages = {pages}")
-    for p in pages:
-        print(f"  Page {p.page}: {p.text[:200]}")
-    # Import here to avoid module caching issues with pytest
+    # Import aquí para evitar problemas de caché de módulos con pytest
+
     try:
         from langchain_text_splitters import MarkdownHeaderTextSplitter as MH, RecursiveCharacterTextSplitter as RC
     except ImportError:
@@ -235,12 +212,8 @@ def chunk_markdown(
         strip_headers=False,
     )
     
-    print(f"DEBUG: full_text = {repr(full_text)}")
     header_chunks = header_splitter.split_text(full_text)
-    print(f"DEBUG: header_chunks = {header_chunks}")
-    for i, hc in enumerate(header_chunks):
-        print(f"  header_chunk {i}: metadata={hc.metadata}, text={hc.page_content[:100]}")
-    
+
     # Segundo paso: subdividir chunks largos con RecursiveCharacterTextSplitter
     recursive_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_chars,
@@ -255,7 +228,6 @@ def chunk_markdown(
     for header_chunk in header_chunks:
         # El chunk ya tiene metadata con los headers
         header_metadata = header_chunk.metadata.copy()
-        print(f"DEBUG: header_metadata = {header_metadata}")
         header_text = header_chunk.page_content
         
         # Si el chunk es muy largo, subdividirlo
@@ -326,6 +298,26 @@ def create_chroma_collection(
     )
 
 
+def create_vector_collection(
+    path: str | Path,
+    collection_name: str,
+    *,
+    dimensions: int | None = None,
+    backend: str = "chroma",
+) -> Any:
+    """Crea la colección con el backend configurado (``chroma`` o ``local``)."""
+    normalized = (backend or "chroma").strip().lower()
+    if normalized == "chroma":
+        return create_chroma_collection(path, collection_name, dimensions=dimensions)
+    if normalized == "local":
+        from contafis_assistant.rag.local_vectors import LocalVectorCollection
+
+        return LocalVectorCollection(path, collection_name, dimensions=dimensions)
+    raise ValueError(
+        f"VECTOR_BACKEND='{backend}' no soportado; use 'chroma' o 'local'"
+    )
+
+
 def build_default_embedder(
     model: str | None = None,
     *,
@@ -375,6 +367,7 @@ def ingest_corpus(
     collection: Any | None = None,
     chroma_path: str | Path | None = None,
     collection_name: str = "contafis_normativa_v1",
+    vector_backend: str = "chroma",
     version: int | None = None,
     dimensions: int | None = None,
     chunk_chars: int = 1000,
@@ -395,8 +388,11 @@ def ingest_corpus(
     index_version = version if version is not None else manifest.bm25_index_version
 
     if collection is None and chroma_path is not None:
-        collection = create_chroma_collection(
-            chroma_path, collection_name, dimensions=expected_dimensions
+        collection = create_vector_collection(
+            chroma_path,
+            collection_name,
+            dimensions=expected_dimensions,
+            backend=vector_backend,
         )
 
     all_chunks: list[IngestChunk] = []

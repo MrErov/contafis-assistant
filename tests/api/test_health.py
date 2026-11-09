@@ -50,6 +50,8 @@ def test_health_reports_aggregated_state_without_secrets_or_pii(make_settings):
         "scope_complete": True,
         "corpus_status": "ok",
         "corpus_version": 3,
+        "vector_backend": "chroma",
+        "vector_available": True,
         "chroma_available": True,
         "bm25_available": True,
         "odoo_available": True,
@@ -149,6 +151,7 @@ def test_invalid_corpus_degrades_health_without_crashing(make_settings):
     assert body["status"] == "degraded"
     assert body["corpus_status"] == "mismatch"
     assert body["corpus_version"] == 9
+    assert body["vector_backend"] == "chroma"
     assert body["chroma_available"] is False
     assert body["bm25_available"] is False
     assert body["scope_state"] == "scope_ok"

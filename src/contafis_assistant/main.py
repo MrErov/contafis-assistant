@@ -518,6 +518,8 @@ class ChatRuntime:
             ),
             "corpus_status": corpus_status.value,
             "corpus_version": corpus_version,
+            "vector_backend": self.settings.vector_backend,
+            "vector_available": chroma_available,
             "chroma_available": chroma_available,
             "bm25_available": bm25_available,
             "odoo_available": odoo_available,

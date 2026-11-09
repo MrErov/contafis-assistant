@@ -6,8 +6,7 @@ from pathlib import Path
 from contafis_assistant.config import Settings
 from contafis_assistant.rag.ingest import (
     build_default_embedder,
-    create_chroma_collection,
-    extract_pdf_pages,
+    create_vector_collection,
     ingest_corpus,
 )
 from contafis_assistant.rag.manifest import manifest_path_for_bm25
@@ -35,15 +34,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.manifest
         else manifest_path_for_bm25(settings.bm25_index_path)
     )
-    collection = create_chroma_collection(
+    collection = create_vector_collection(
         settings.chroma_path,
         settings.chroma_collection,
         dimensions=settings.embedding_dimensions,
+        backend=settings.vector_backend,
     )
     result = ingest_corpus(
         manifest_path,
         bm25_output_path=settings.bm25_index_path,
-        extractor=extract_pdf_pages,
         embedder=build_default_embedder(
             settings.embedding_model,
             api_key=settings.openai_api_key.get_secret_value(),
