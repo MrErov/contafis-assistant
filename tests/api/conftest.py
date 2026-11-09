@@ -85,6 +85,9 @@ def make_settings(settings_env):
     def factory(**env: str) -> Settings:
         # Default test settings to avoid scope_admin_key warning
         defaults = {"ODOO_READONLY_ATTESTED": "true"}
+        # Provide default secret for production to allow testing other validations
+        if env.get("APP_ENV") == "production" and "API_SHARED_SECRET" not in env:
+            defaults["API_SHARED_SECRET"] = "test-production-secret"
         defaults.update(env)
         for key, value in defaults.items():
             settings_env.setenv(key, value)

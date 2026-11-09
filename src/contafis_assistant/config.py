@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import sys
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -121,6 +122,19 @@ class Settings(BaseSettings):
         if self.app_env == "production" and not self.odoo_readonly_attested:
             raise ValueError(
                 "ODOO_READONLY_ATTESTED=true es obligatorio en producción"
+            )
+
+        if self.app_env == "production" and self.api_shared_secret is None:
+            raise ValueError(
+                "API_SHARED_SECRET es obligatorio en producción"
+            )
+
+        if self.app_env != "production" and self.api_shared_secret is None:
+            print(
+                f"WARNING: API_SHARED_SECRET no configurado; "
+                f"app_env={self.app_env}. "
+                f"El servicio continuará pero no estará protegido por API key.",
+                file=sys.stdout,
             )
 
         return self

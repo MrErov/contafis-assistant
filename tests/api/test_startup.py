@@ -108,3 +108,64 @@ def test_dev_non_internal_starts_degraded_without_tools_or_admin_key(
 def test_remote_bind_without_secret_does_not_start(make_settings):
     with pytest.raises(ValidationError):
         make_settings(API_HOST="0.0.0.0")
+
+
+def test_production_create_app_without_secret_fails(settings_env):
+    """T-3: AC-1 — create_app() en production sin secreto lanza ValidationError antes de devolver la app."""
+    import tempfile
+    import os
+
+    settings_env.setenv("APP_ENV", "production")
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    settings_env.delenv("API_SHARED_SECRET", raising=False)
+
+    # Usar directorio temporal sin .env para aislar el test
+    with tempfile.TemporaryDirectory() as tmpdir:
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            from contafis_assistant.config import Settings
+            from contafis_assistant.main import create_app
+
+            with pytest.raises(ValidationError) as exc_info:
+                create_app()
+
+            assert "API_SHARED_SECRET" in str(exc_info.value)
+        finally:
+            os.chdir(old_cwd)
+
+
+def test_development_without_secret_starts_warns_and_livez_works(settings_env, capsys):
+    """T-7: AC-3 — Development sin secreto arranca, emite warning, y /livez responde 200."""
+    import tempfile
+    import os
+
+    settings_env.setenv("APP_ENV", "development")
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    settings_env.delenv("API_SHARED_SECRET", raising=False)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            from contafis_assistant.config import Settings
+            from contafis_assistant.main import create_app
+            from fastapi.testclient import TestClient
+
+            # create_app() debe construir la app sin error (aunque warning en stdout)
+            app = create_app()
+
+            # Verificar que el warning se emitió
+            captured = capsys.readouterr()
+            assert "API_SHARED_SECRET" in captured.out
+            assert "development" in captured.out
+
+            # /livez debe responder 200 sin X-API-Key
+            client = TestClient(app)
+            response = client.get("/livez")
+            assert response.status_code == 200
+            assert response.json()["status"] == "alive"
+        finally:
+            os.chdir(old_cwd)

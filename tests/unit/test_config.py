@@ -131,3 +131,68 @@ def test_no_odoo_user_or_password_fields(settings_env):
     settings = Settings(_env_file=None)
     assert not hasattr(settings, "odoo_user")
     assert not hasattr(settings, "odoo_password")
+
+
+def test_production_without_shared_secret_fails(settings_env):
+    """T-1: AC-1 — Production sin API_SHARED_SECRET falla con ValidationError."""
+    settings_env.setenv("APP_ENV", "production")
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    settings_env.delenv("API_SHARED_SECRET", raising=False)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    assert "API_SHARED_SECRET" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("secret_value", [None, "", "   "])
+def test_production_with_empty_or_whitespace_secret_fails(settings_env, secret_value):
+    """T-2: AC-1 — Production con secreto vacío o solo espacios falla igual."""
+    settings_env.setenv("APP_ENV", "production")
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    if secret_value is None:
+        settings_env.delenv("API_SHARED_SECRET", raising=False)
+    else:
+        settings_env.setenv("API_SHARED_SECRET", secret_value)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+
+    assert "API_SHARED_SECRET" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("app_env", ["development", "test"])
+@pytest.mark.parametrize("secret_value", [None, "", "   "])
+def test_non_production_without_secret_warns_and_continues(settings_env, capsys, app_env, secret_value):
+    """T-6: AC-3 — Non-production sin secreto emite warning en stdout y continúa."""
+    settings_env.setenv("APP_ENV", app_env)
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    if secret_value is None:
+        settings_env.delenv("API_SHARED_SECRET", raising=False)
+    else:
+        settings_env.setenv("API_SHARED_SECRET", secret_value)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.app_env == app_env
+    captured = capsys.readouterr()
+    assert "API_SHARED_SECRET" in captured.out
+    assert app_env in captured.out
+
+
+def test_non_production_without_app_env_defaults_to_development_warns(settings_env, capsys):
+    """T-6: AC-3 — APP_ENV ausente defaulta a development y emite warning."""
+    settings_env.delenv("APP_ENV", raising=False)
+    settings_env.setenv("ODOO_READONLY_ATTESTED", "true")
+    settings_env.setenv("API_HOST", "127.0.0.1")
+    settings_env.delenv("API_SHARED_SECRET", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.app_env == "development"
+    captured = capsys.readouterr()
+    assert "API_SHARED_SECRET" in captured.out
+    assert "development" in captured.out

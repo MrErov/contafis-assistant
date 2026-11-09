@@ -19,6 +19,7 @@ from .conftest import (
     scope_snapshot,
     warning_codes,
 )
+from contafis_assistant.api.security import API_KEY_HEADER
 
 
 def test_health_reports_aggregated_state_without_secrets_or_pii(make_settings):
@@ -107,7 +108,10 @@ def test_production_refresh_unsafe_returns_503_and_does_not_run_tools(
     )
 
     with TestClient(create_app(settings, runtime=runtime)) as client:
-        client.headers.update({USER_TOKEN_HEADER: DEFAULT_USER_TOKEN})
+        client.headers.update({
+            USER_TOKEN_HEADER: DEFAULT_USER_TOKEN,
+            API_KEY_HEADER: "test-production-secret",
+        })
         assert client.get("/health").status_code == 200
 
         scope.snapshot = scope_snapshot(
