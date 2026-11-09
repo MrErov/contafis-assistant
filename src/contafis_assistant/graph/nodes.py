@@ -448,7 +448,13 @@ def finalize_node(
 def route_after_classify(state: TurnState) -> str:
     if state.is_final:
         return "finalize"
-    if any(mention.strip() for mention in state.entity_mentions):
+    # La resolución de entidades es una operación del ERP: solo tiene sentido
+    # para intenciones erp/mixta. El clasificador puede devolver menciones
+    # espurias en consultas normativas (por ejemplo, el título de una ley) y,
+    # si se resolvieran primero, la consulta terminaría en not_found sin llegar
+    # nunca al corpus.
+    needs_erp = state.intent in {Intent.erp, Intent.mixta}
+    if needs_erp and any(mention.strip() for mention in state.entity_mentions):
         return "resolve_entity"
     return "plan"
 

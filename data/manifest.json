@@ -1,0 +1,18 @@
+{
+  "bm25_index_version": 1,
+  "bm25_index_sha256": "eb8233b83402f1b6673cb7e77c6ad59e1b037bd487c7b97695828ff374e57044",
+  "dimensions": 2048,
+  "documents": [
+    {
+      "id": "6978-2026-01-29-EXTRAORDINARIA",
+      "title": "Gaceta Oficial 6.978 Extraordinaria - Ley de Reforma de la Ley Orgánica de Hidrocarburos",
+      "version": "2026",
+      "file": "corpus/6978-2026-01-29-EXTRAORDINARIA.md",
+      "sha256": "680fdd0baf9da3c5be596e15b0155350af501be90c8f2d5c923a19a92e49e36a",
+      "pages": 1,
+      "published_at": "2026-01-29",
+      "language": "es",
+      "origin": "Gaceta Oficial Nº 6.978 Extraordinario"
+    }
+  ]
+}

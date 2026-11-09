@@ -35,11 +35,8 @@ def classify_pdf(pdf_path: Path) -> dict:
     Returns:
         dict con claves: 'is_scanned' (bool), 'page_count' (int), 'metadata' (dict)
     """
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
-    
     try:
-        result = pdf_inspector.inspect(pdf_bytes)
+        result = pdf_inspector.classify_pdf(str(pdf_path))
     except Exception as e:
         return {
             "is_scanned": True,
@@ -48,14 +45,14 @@ def classify_pdf(pdf_path: Path) -> dict:
             "needs_ocr": True
         }
     
-    # pdf-inspector returns a dict with classification info
-    is_scanned = result.get("is_scanned", True)
-    page_count = result.get("page_count", 0)
+    # pdf-inspector returns a PdfClassification object
+    is_scanned = len(result.pages_needing_ocr) > 0
+    page_count = result.page_count
     
     return {
         "is_scanned": is_scanned,
         "page_count": page_count,
-        "metadata": result.get("metadata", {}),
+        "metadata": {},
         "needs_ocr": is_scanned
     }
 
@@ -71,11 +68,15 @@ def pdf_to_markdown(pdf_path: Path, output_path: Path | None = None) -> dict:
         output_path = pdf_path.with_suffix(".md")
     
     try:
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
+        result = pdf_inspector.extract_pages_markdown(str(pdf_path))
         
-        # Extraer markdown usando pdf-inspector
-        markdown = pdf_inspector.to_markdown(pdf_bytes)
+        # Combinar el markdown de todas las páginas
+        markdown_parts = []
+        for page in result.pages:
+            if page.markdown:
+                markdown_parts.append(page.markdown)
+        
+        markdown = "\n\n".join(markdown_parts)
         
         # Guardar el archivo markdown
         output_path.write_text(markdown, encoding="utf-8")
@@ -123,29 +124,29 @@ def process_corpus(input_dir: Path, output_dir: Path | None = None, force: bool 
         output_path = output_dir / pdf_path.with_suffix(".md").name
         
         if output_path.exists() and not force:
-            print(f"  ⏭️  {pdf_path.name} -> {output_path.name} (ya existe, use --force para sobrescribir)")
+            print(f"  [SKIP] {pdf_path.name} -> {output_path.name} (ya existe, use --force para sobrescribir)")
             continue
         
-        print(f"  🔍 Analizando {pdf_path.name}...")
+        print(f"  [ANALIZANDO] {pdf_path.name}...")
         
         # Clasificar el PDF
         classification = classify_pdf(pdf_path)
         
         if classification.get("needs_ocr", True):
-            print(f"  ⚠️  {pdf_path.name} parece ser un PDF escaneado (needs OCR)")
+            print(f"  [WARN] {pdf_path.name} parece ser un PDF escaneado (needs OCR)")
             print(f"     Clasificación: scanned={classification['is_scanned']}, pages={classification['page_count']}")
             if classification.get("metadata", {}).get("error"):
                 print(f"     Error en clasificación: {classification['metadata']['error']}")
             print(f"     Se omite la conversión a Markdown (necesita OCR)")
             continue
         
-        print(f"  ✅ PDF nativo detectado ({classification['page_count']} páginas)")
+        print(f"  [OK] PDF nativo detectado ({classification['page_count']} páginas)")
         
         # Convertir a Markdown
         result = pdf_to_markdown(pdf_path, output_dir / pdf_path.with_suffix(".md").name)
         
         if result["success"]:
-            print(f"  ✅ Convertido a {output_path.name} ({len(result['markdown'])} caracteres)")
+            print(f"  [OK] Convertido a {output_path.name} ({len(result['markdown'])} caracteres)")
             success_count += 1
         else:
             print(f"  ❌ Error al convertir: {result['error']}")
@@ -204,7 +205,7 @@ Ejemplos:
     
     success = process_corpus(args.input_dir, args.output_dir, args.force)
     
-    print(f"\n✅ Procesamiento completado: {success} archivo(s) convertido(s)")
+    print(f"\n[OK] Procesamiento completado: {success} archivo(s) convertido(s)")
     return 0 if success > 0 else 0
 
 

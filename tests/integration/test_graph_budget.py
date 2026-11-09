@@ -194,6 +194,39 @@ def test_exactly_three_tools_with_resolved_sources_is_not_iteration_limit():
     ]
 
 
+def test_normative_query_with_mentions_skips_entity_resolution():
+    """Una consulta normativa no debe resolver entidades del ERP.
+
+    El clasificador puede devolver ``entity_mentions`` espurias (por ejemplo,
+    el título de una ley); resolverlas antes de planificar desvía la consulta
+    al ERP y termina en ``not_found`` sin consultar el corpus.
+    """
+    rag = FakeTool(ToolOutcome(status=Status.ok, sources=[SOURCE]))
+    erp = FakeTool()
+    resolver = FakeResolver({"Gaceta 6.978": _entity("Gaceta 6.978", 9)})
+    deps = _deps(
+        FakeClassifier(
+            Intent.normativa,
+            mentions=["Ley de Hidrocarburos", "Gaceta 6.978"],
+        ),
+        tools=_tools(erp=erp, rag=rag),
+        resolver=resolver,
+    )
+
+    state = run_turn(
+        "¿De qué trata la Ley de Reforma de la Ley Orgánica de Hidrocarburos "
+        "según la Gaceta 6.978?",
+        deps=deps,
+        thread_id="normativa-con-menciones",
+    )
+
+    assert resolver.mentions == []
+    assert erp.calls == []
+    assert len(rag.calls) == 1
+    assert state.tools_used == ["search_normativa"]
+    assert state.status in {Status.ok, Status.partial}
+
+
 def test_entity_from_history_does_not_spend_budget():
     store = ThreadStore()
     store.resolve("historial")
