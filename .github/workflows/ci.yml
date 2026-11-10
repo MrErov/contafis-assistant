@@ -103,20 +103,21 @@ jobs:
             exit 1
           fi
 
-  deploy:
-    needs: [test, image]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production
-    concurrency:
-      group: deploy-main
-      cancel-in-progress: false
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Trigger Render deploy via hook
-        run: |
-          curl -fsS --retry 3 --retry-delay 5 -o /dev/null -X POST "$RENDER_DEPLOY_HOOK_URL"
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+  # TODO: Reactivar cuando RENDER_DEPLOY_HOOK_URL esté configurado en GitHub
+  # deploy:
+  #   needs: [test, image]
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   concurrency:
+  #     group: deploy-main
+  #     cancel-in-progress: false
+  #   timeout-minutes: 10
+  #   permissions:
+  #     contents: read
+  #   steps:
+  #     - name: Trigger Render deploy via hook
+  #       run: |
+  #         curl -fsS --retry 3 --retry-delay 5 -o /dev/null -X POST "$RENDER_DEPLOY_HOOK_URL"
+  #       env:
+  #         RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
