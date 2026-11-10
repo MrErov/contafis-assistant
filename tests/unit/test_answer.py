@@ -7,6 +7,7 @@ import pytest
 
 from contafis_assistant.domain.answer import (
     AnswerContext,
+    build_composer_messages,
     compose_answer,
     render_answer,
     validate_grounding,
@@ -27,6 +28,8 @@ from contafis_assistant.domain.enums import (
 )
 from contafis_assistant.domain.contracts import Warning
 
+from contafis_assistant.observability.redaction import DATA_CLOSE, DATA_OPEN
+
 MONETARY_PATTERN = re.compile(
     r"(?i)(?:\$|€|£|¥|\bUSD\b|\bVES\b|\bEUR\b|\bBs\.?\b|\bbol[ií]var|\bmonto\b)"
 )
@@ -40,6 +43,13 @@ SOURCE = Source(
     chunk_id="c1",
     score=1 / 61,
     collection="contafis_normativa_v1",
+)
+
+SOURCE_WITH_TEXT = SOURCE.model_copy(
+    update={
+        "chunk_id": "c2",
+        "text": "El contribuyente especial debe declarar por el portal del Seniat.",
+    }
 )
 
 OBLIGATION = ObligationItem(
@@ -290,3 +300,52 @@ def test_grounding_rejects_invented_item_name():
     context = _context(Status.ok, data=[DATA])
 
     assert validate_grounding("El cliente Fantasma está vencido.", context) is False
+
+
+def test_build_composer_messages_wraps_question_and_fragments():
+    context = AnswerContext(
+        status=Status.ok,
+        intent=Intent.normativa,
+        sources=[SOURCE_WITH_TEXT],
+        message="¿quién debe declarar?",
+    )
+
+    messages = build_composer_messages(context)
+
+    assert messages[0][0] == "system"
+    assert "asistente fiscal venezolano" in messages[0][1]
+    role, human = messages[1]
+    assert role == "human"
+    assert "¿quién debe declarar?" in human
+    assert "Fragmentos normativos" in human
+    # Pregunta y fragmentos viajan delimitados como dato no confiable.
+    assert human.count(DATA_OPEN) >= 2
+    assert human.count(DATA_CLOSE) >= 2
+    assert "declarar por el portal del Seniat" in human
+
+
+def test_grounding_uses_chunk_text_from_sources():
+    context = _context(Status.ok, intent=Intent.normativa, sources=[SOURCE_WITH_TEXT])
+
+    # "Especial" sólo está en el texto del chunk: el grounding lo habilita.
+    assert validate_grounding("El formulario Especial aplica.", context) is True
+    # Un nombre inventado sigue rechazándose aunque haya chunks.
+    assert validate_grounding("El formulario Inventado aplica.", context) is False
+
+
+def test_grounding_without_chunk_text_rejects_source_content():
+    context = _context(Status.ok, intent=Intent.normativa, sources=[SOURCE])
+
+    # Sin texto de chunk, "Especial" no está permitido.
+    assert validate_grounding("El formulario Especial aplica.", context) is False
+
+
+def test_composer_output_grounded_in_chunk_text_is_kept():
+    context = _context(Status.ok, intent=Intent.normativa, sources=[SOURCE_WITH_TEXT])
+
+    answer = compose_answer(
+        context,
+        composer=lambda _: "Debe declarar por el portal del Seniat.",
+    )
+
+    assert answer == "Debe declarar por el portal del Seniat."

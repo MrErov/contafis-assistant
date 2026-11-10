@@ -18,7 +18,11 @@ from contafis_assistant.api.routes import router
 from contafis_assistant.api.security import API_KEY_HEADER, ApiKeyGuard
 from contafis_assistant.api.user_auth import UserContext
 from contafis_assistant.config import Settings
-from contafis_assistant.domain.answer import AnswerComposer
+from contafis_assistant.domain.answer import (
+    AnswerComposer,
+    AnswerContext,
+    build_composer_messages,
+)
 from contafis_assistant.domain.contracts import ChatResponse, Warning
 from contafis_assistant.domain.enums import (
     CorpusStatus,
@@ -868,6 +872,49 @@ class _LazyOpenAIClassifier:
         return self.classify(message)
 
 
+class _LazyOpenAIAnswerComposer:
+    """Answer Composer por LLM para consultas normativas con grounding.
+
+    Recibe el ``AnswerContext``, arma el prompt con los fragmentos recuperados
+    y pide al modelo una respuesta en español (es-VE). La salida queda sujeta a
+    ``validate_grounding`` en ``compose_answer``: si el modelo inventa hechos,
+    cifras o incluye montos, se cae al render determinista.
+
+    Sólo redacta cuando hay fragmentos normativos con texto y no hay datos de
+    ERP (consultas puramente normativas). En cualquier otro caso devuelve
+    ``""``, lo que fuerza el render determinista que ya combina ERP + fuentes.
+    El LLM se construye con ``answer_model`` (modelo de texto) y NUNCA expone
+    herramientas.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._model: Any | None = None
+
+    def _ensure(self) -> Any:
+        if self._model is None:
+            from langchain_openai import ChatOpenAI
+
+            self._model = ChatOpenAI(
+                model=self._settings.answer_model_id,
+                api_key=self._settings.openai_api_key.get_secret_value(),
+                base_url=self._settings.openai_base_url,
+                timeout=self._settings.llm_timeout_seconds,
+                max_retries=2,
+                temperature=0,
+            )
+        return self._model
+
+    def __call__(self, context: AnswerContext) -> str:
+        fragments = [
+            source for source in context.sources if source.text.strip()
+        ]
+        if not fragments or context.data:
+            return ""
+        response = self._ensure().invoke(build_composer_messages(context))
+        return str(getattr(response, "content", "") or "")
+
+
 def build_runtime(
     settings: Settings,
     *,
@@ -920,6 +967,8 @@ def build_runtime(
         max_turns=settings.memory_max_turns,
     )
     classifier = classifier or _LazyOpenAIClassifier(settings)
+    if answer_composer is None:
+        answer_composer = _LazyOpenAIAnswerComposer(settings)
     if tools is None:
         tools = _build_tools(
             client=client,

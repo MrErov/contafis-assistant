@@ -18,7 +18,7 @@ from contafis_assistant.domain.contracts import (
 )
 from contafis_assistant.domain.enums import Intent, Status
 from contafis_assistant.domain.time import format_date
-from contafis_assistant.observability.redaction import redact_text
+from contafis_assistant.observability.redaction import redact_text, wrap_untrusted
 
 AnswerComposer = Callable[["AnswerContext"], str]
 
@@ -534,6 +534,53 @@ def validate_grounding(candidate: str, context: AnswerContext) -> bool:
         return False
 
 
+COMPOSER_SYSTEM_PROMPT = (
+    "Sos un asistente fiscal venezolano. Redactá una respuesta breve y directa "
+    "en español (es-VE) usando ÚNICAMENTE los fragmentos normativos provistos "
+    "como datos. Si la respuesta no está en esos fragmentos, decí con claridad "
+    "que no lo sabés. No inventes cifras, fechas, nombres ni citas, y no "
+    "incluyas montos ni moneda. Citá el documento y la sección cuando resulte "
+    "del fragmento."
+)
+
+
+def _composer_fragment(index: int, source: Source) -> str:
+    label_parts: list[str] = [source.document]
+    if source.section:
+        label_parts.append(source.section)
+    if source.locator:
+        label_parts.append(source.locator)
+    if source.page is not None:
+        label_parts.append(f"página {source.page}")
+    header = f"Fuente {index}: " + " — ".join(part for part in label_parts if part)
+    return f"{header}\n{wrap_untrusted(source.text)}"
+
+
+def build_composer_messages(context: AnswerContext) -> list[tuple[str, str]]:
+    """Arma (system, human) para que el LLM redacte sólo desde los fragmentos.
+
+    La pregunta y cada fragmento se delimitan como dato no confiable
+    (``wrap_untrusted``) para que el contenido del corpus o del usuario no pueda
+    inyectar instrucciones. ``validate_grounding`` sigue siendo la red de
+    seguridad final sobre la respuesta del modelo.
+    """
+    fragments = [
+        source
+        for source in context.sources[:MAX_RENDERED_SOURCES]
+        if source.text.strip()
+    ]
+    blocks = "\n\n".join(
+        _composer_fragment(position, source)
+        for position, source in enumerate(fragments, start=1)
+    )
+    human = (
+        "Pregunta del usuario:\n"
+        f"{wrap_untrusted(context.message)}\n\n"
+        f"Fragmentos normativos:\n{blocks or wrap_untrusted('(sin fragmentos)')}"
+    )
+    return [("system", COMPOSER_SYSTEM_PROMPT), ("human", human)]
+
+
 def compose_answer(
     context: AnswerContext,
     *,
@@ -555,8 +602,10 @@ def compose_answer(
 
 
 __all__ = [
+    "COMPOSER_SYSTEM_PROMPT",
     "AnswerComposer",
     "AnswerContext",
+    "build_composer_messages",
     "compose_answer",
     "contains_monetary",
     "render_answer",

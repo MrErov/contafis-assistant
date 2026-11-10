@@ -91,6 +91,10 @@ class Source(BaseModel):
     chunk_id: str
     score: float = Field(ge=0)
     collection: str
+    # Cuerpo del fragmento recuperado. Habilita el RAG con grounding: el LLM
+    # solo puede afirmar hechos presentes en este texto (vía ``validate_grounding``).
+    # Vacío por defecto para no romper fixtures ni respuestas previas.
+    text: str = ""
 
 
 class CompanyBreakdown(BaseModel):

@@ -196,3 +196,20 @@ def test_non_production_without_app_env_defaults_to_development_warns(settings_e
     captured = capsys.readouterr()
     assert "API_SHARED_SECRET" in captured.out
     assert "development" in captured.out
+
+
+def test_answer_model_defaults_to_llm_model(settings_env):
+    settings = Settings(_env_file=None)
+
+    assert settings.answer_model is None
+    assert settings.answer_model_id == settings.llm_model
+
+
+def test_answer_model_can_be_overridden_independently(settings_env):
+    settings_env.setenv("ANSWER_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+    settings = Settings(_env_file=None)
+
+    assert settings.answer_model == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    assert settings.answer_model_id == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    # El LLM de visión (digitize) no se ve afectado.
+    assert settings.llm_model == "gpt-test"

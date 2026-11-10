@@ -127,6 +127,7 @@ def fuse_results(
                 chunk_id=chunk_id,
                 score=score,
                 collection=collection_name,
+                text=entry.text,
             )
         )
 

@@ -162,6 +162,18 @@ def test_source_is_completed_with_metadata_and_page_is_one_based():
     assert source.collection == "contafis_normativa_v1"
 
 
+def test_source_carries_chunk_text_from_dense_hit():
+    result = fuse_results([_dense("c1", 0.10)], [])
+
+    assert result.sources[0].text == "texto c1"
+
+
+def test_source_carries_chunk_text_from_bm25_hit():
+    result = fuse_results([], [_bm25("c9", 2.0)])
+
+    assert result.sources[0].text == "texto c9"
+
+
 def test_missing_page_metadata_yields_none_and_warning():
     result = fuse_results([_dense("c1", 0.10, page=None)], [])
 
