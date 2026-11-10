@@ -10,6 +10,7 @@ import io
 import json
 import pytest
 from PIL import Image, ImageDraw
+from pydantic import ValidationError
 
 from contafis_assistant.domain.digitize import (
     DigitizeRequest,
@@ -292,6 +293,37 @@ def test_extracted_invoice_missing_optional_fields():
     assert extracted.supplier_rif is None
     assert extracted.currency == "VES"  # default
     assert extracted.lines == []
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("VES", "VES"),
+        ("Bs", "VES"),
+        ("Bs.", "VES"),
+        ("Bs.S", "VES"),
+        ("Bs. S.", "VES"),
+        ("BSF", "VES"),
+        ("BsV", "VES"),
+        ("Bolívares", "VES"),
+        (None, "VES"),
+        ("USD", "USD"),
+        ("usd", "USD"),
+        ("US$", "USD"),
+        ("$", "USD"),
+        ("Dólares", "USD"),
+    ],
+)
+def test_currency_normalization(raw, expected):
+    """El LLM devuelve el símbolo impreso; el esquema debe normalizarlo."""
+    invoice = ExtractedInvoice(currency=raw)
+    assert invoice.currency == expected
+
+
+def test_currency_unknown_still_fails():
+    """Una moneda no soportada no se enmascara como VES."""
+    with pytest.raises(ValidationError):
+        ExtractedInvoice(currency="EUR")
 
 
 def test_extracted_line():

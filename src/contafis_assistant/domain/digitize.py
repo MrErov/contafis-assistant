@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -51,6 +52,31 @@ class ExtractedLine(BaseModel):
     total: float = Field(..., description="Total de la línea")
 
 
+# Variantes que devuelve el LLM al leer el símbolo impreso en el recibo.
+_VES_ALIASES = frozenset({"ves", "bs", "bs.s", "bsf", "bsv", "bsfv", "bolivar", "bolivares"})
+_USD_ALIASES = frozenset({"usd", "us$", "$", "usd$", "dolar", "dolares"})
+
+
+def normalize_currency(value: object) -> object:
+    """Normaliza la moneda a ``VES``/``USD`` antes de validar el Literal.
+
+    NIM vision devuelve el símbolo tal como aparece impreso ("Bs", "Bs.S",
+    "BsF", "US$", "Dólares"). Sin normalizar, ``Literal["VES", "USD"]``
+    rechaza el recibo completo y el lote lo marca como error.
+    """
+    if value is None:
+        return "VES"
+    if not isinstance(value, str):
+        return value
+    key = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    key = key.strip().lower().replace(" ", "").rstrip(".")
+    if key in _VES_ALIASES:
+        return "VES"
+    if key in _USD_ALIASES:
+        return "USD"
+    return value.strip().upper()
+
+
 class ExtractedInvoice(BaseModel):
     """Factura extraída estructurada."""
     
@@ -70,6 +96,11 @@ class ExtractedInvoice(BaseModel):
     lines: list[ExtractedLine] = Field(default_factory=list, description="Líneas de detalle")
     credit_note_ref: str | None = Field(default=None, description="Ref factura original (nota crédito)")
     debit_note_ref: str | None = Field(default=None, description="Ref factura original (nota débito)")
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, value: object) -> object:
+        return normalize_currency(value)
 
 
 class DigitizeWarning(BaseModel):
