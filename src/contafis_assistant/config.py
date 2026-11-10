@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # cae a ``llm_model``. Se separa del LLM de visión (digitize) para elegir
     # un modelo de texto potente sin degradar la digitalización.
     answer_model: str | None = None
+    # Modelo dedicado del clasificador de intenciones. Si no se configura, cae
+    # a ``llm_model``. Permite usar un modelo pequeño/rápido sin tocar el LLM de
+    # visión que usa digitize (p. ej. llama-3.2-90b-vision-instruct).
+    classifier_model: str | None = None
     embedding_model: str
     embedding_dimensions: int = Field(default=2048, ge=1)
     llm_timeout_seconds: float = 60
@@ -147,3 +151,8 @@ class Settings(BaseSettings):
     def answer_model_id(self) -> str:
         """Modelo del Answer Composer: ``ANSWER_MODEL`` o, en su defecto, ``LLM_MODEL``."""
         return self.answer_model or self.llm_model
+
+    @property
+    def classifier_model_id(self) -> str:
+        """Modelo del clasificador: ``CLASSIFIER_MODEL`` o, en su defecto, ``LLM_MODEL``."""
+        return self.classifier_model or self.llm_model

@@ -782,7 +782,7 @@ class _LazyOpenAIClassifier:
             from langchain_openai import ChatOpenAI
 
             self._structured_model = ChatOpenAI(
-                model=self._settings.llm_model,
+                model=self._settings.classifier_model_id,
                 api_key=self._settings.openai_api_key.get_secret_value(),
                 base_url=self._settings.openai_base_url,
                 timeout=self._settings.llm_timeout_seconds,
@@ -795,7 +795,7 @@ class _LazyOpenAIClassifier:
             from langchain_openai import ChatOpenAI
 
             self._json_model = ChatOpenAI(
-                model=self._settings.llm_model,
+                model=self._settings.classifier_model_id,
                 api_key=self._settings.openai_api_key.get_secret_value(),
                 base_url=self._settings.openai_base_url,
                 timeout=self._settings.llm_timeout_seconds,

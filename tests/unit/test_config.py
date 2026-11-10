@@ -213,3 +213,20 @@ def test_answer_model_can_be_overridden_independently(settings_env):
     assert settings.answer_model_id == "nvidia/nemotron-3.5-lightning-30b-a3b"
     # El LLM de visión (digitize) no se ve afectado.
     assert settings.llm_model == "gpt-test"
+
+
+def test_classifier_model_defaults_to_llm_model(settings_env):
+    settings = Settings(_env_file=None)
+
+    assert settings.classifier_model is None
+    assert settings.classifier_model_id == settings.llm_model
+
+
+def test_classifier_model_can_be_overridden_without_touching_vision(settings_env):
+    settings_env.setenv("CLASSIFIER_MODEL", "deepseek-ai/deepseek-v4.1-flash")
+    settings = Settings(_env_file=None)
+
+    assert settings.classifier_model == "deepseek-ai/deepseek-v4.1-flash"
+    assert settings.classifier_model_id == "deepseek-ai/deepseek-v4.1-flash"
+    # El LLM de visión (digitize) conserva su modelo.
+    assert settings.llm_model == "gpt-test"
