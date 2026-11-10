@@ -102,6 +102,55 @@ class DigitizeResponse(BaseModel):
 
 
 # ============================================================================
+# Batch (hasta 20 imágenes por turno)
+# ============================================================================
+
+DIGITIZE_BATCH_MAX_IMAGES = 20
+
+
+class DigitizeBatchItemResult(BaseModel):
+    """Resultado de un recibo dentro del lote.
+
+    Un fallo aislado (timeout de NIM, JSON ilegible) no invalida el resto del
+    lote: cada ítemReporta su propio estado.
+    """
+
+    index: int = Field(..., ge=0, description="Posición en el lote (0-based)")
+    filename: str = Field(..., description="Nombre de archivo enviado")
+    status: Literal["ok", "error"] = Field(
+        ..., description="'ok' si se extrajo, 'error' si falló"
+    )
+    result: DigitizeResponse | None = Field(
+        default=None, description="Datos extraídos cuando status='ok'"
+    )
+    error: str | None = Field(
+        default=None, description="Mensaje de error cuando status='error'"
+    )
+
+
+class DigitizeBatchRequest(BaseModel):
+    """Lote de imágenes para digitalizar en un solo turno."""
+
+    images: list[DigitizeRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=DIGITIZE_BATCH_MAX_IMAGES,
+        description=f"Entre 1 y {DIGITIZE_BATCH_MAX_IMAGES} imágenes",
+    )
+
+
+class DigitizeBatchResponse(BaseModel):
+    """Resumen del lote más el resultado por imagen (en el orden enviado)."""
+
+    total: int = Field(..., ge=0, description="Cantidad de imágenes recibidas")
+    succeeded: int = Field(..., ge=0, description="Cantidad digitalizada correctamente")
+    failed: int = Field(..., ge=0, description="Cantidad que falló")
+    results: list[DigitizeBatchItemResult] = Field(
+        default_factory=list, description="Un resultado por imagen, en orden"
+    )
+
+
+# ============================================================================
 # Validaciones post-LLM (deterministas)
 # ============================================================================
 
@@ -222,6 +271,10 @@ def add_missing_field_warnings(extracted: ExtractedInvoice, warnings: list[Digit
 
 
 __all__ = [
+    "DIGITIZE_BATCH_MAX_IMAGES",
+    "DigitizeBatchItemResult",
+    "DigitizeBatchRequest",
+    "DigitizeBatchResponse",
     "DigitizeRequest",
     "DigitizeResponse",
     "ExtractedInvoice",

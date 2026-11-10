@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import traceback
 import uuid
@@ -11,17 +12,44 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from contafis_assistant.api.digitize import get_digitize_service, NIMError, NIMTimeoutError, NIMParsingError
+from contafis_assistant.api.digitize import (
+    get_digitize_service,
+    NIMError,
+    NIMTimeoutError,
+    NIMParsingError,
+)
 from contafis_assistant.api.errors import (
     ServiceUnavailable,
     invalid_request_response,
 )
 from contafis_assistant.api.user_auth import UserContext, get_user_context_from_session
 from contafis_assistant.domain.contracts import ChatResponse, ScopeInfo
-from contafis_assistant.domain.digitize import DigitizeRequest, DigitizeResponse
+from contafis_assistant.domain.digitize import (
+    DigitizeBatchItemResult,
+    DigitizeBatchRequest,
+    DigitizeBatchResponse,
+    DigitizeRequest,
+    DigitizeResponse,
+)
 from contafis_assistant.domain.request import validate_chat_request
 
 router = APIRouter()
+
+# Pausa entre imágenes para no saturar NIM (límites de rate del proveedor).
+DIGITIZE_BATCH_DELAY_SECONDS = 2.0
+
+
+def _digitize_error_detail(exc: Exception) -> str:
+    """Mensaje accionable por tipo de fallo (espeja el mapeo de /digitize)."""
+    if isinstance(exc, NIMTimeoutError):
+        return "El servicio de digitalización tardó demasiado con esta imagen."
+    if isinstance(exc, NIMParsingError):
+        return "El servicio devolvió una respuesta ilegible para esta imagen."
+    if isinstance(exc, NIMError):
+        return "El servicio de digitalización no pudo procesar esta imagen."
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return "Error inesperado al digitalizar esta imagen."
 
 
 def _runtime(request: Request) -> Any:
@@ -138,6 +166,63 @@ async def digitize(
     except ValueError as e:
         # Errores de validación de request (base64 inválido, etc.)
         raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@router.post("/digitize_batch", response_model=DigitizeBatchResponse)
+async def digitize_batch(
+    request: Request,
+    digitize_request: DigitizeBatchRequest,
+    user_ctx: UserContext = Depends(get_user_context_from_session),
+) -> DigitizeBatchResponse:
+    """Digitaliza hasta 20 imágenes en un solo turno (Spec 006, batch).
+
+    Secuencial a propósito: NIM tiene límites de rate y una ráfaga de 20
+    peticiones en paralelo se convierte en 503 masivos. Cada imagen se procesa
+    con la misma lógica de ``/digitize`` y un fallo aislado no invalida el lote.
+
+    Nota de latencia: cada imagen tarda ~30-60s contra NIM vision, así que un
+    lote de 20 tarda ~10-20 minutos. El cliente debe usar un timeout acorde.
+    """
+    runtime = _runtime(request)
+    service = get_digitize_service(runtime.settings)
+
+    images = digitize_request.images
+    results: list[DigitizeBatchItemResult] = []
+    succeeded = 0
+
+    for index, image_request in enumerate(images):
+        try:
+            single = await run_in_threadpool(service.digitize, image_request)
+        except Exception as exc:
+            # Un fallo puntual se reporta por ítem: el resto del lote continúa.
+            results.append(
+                DigitizeBatchItemResult(
+                    index=index,
+                    filename=image_request.filename,
+                    status="error",
+                    error=_digitize_error_detail(exc),
+                )
+            )
+        else:
+            succeeded += 1
+            results.append(
+                DigitizeBatchItemResult(
+                    index=index,
+                    filename=image_request.filename,
+                    status="ok",
+                    result=single,
+                )
+            )
+
+        if index < len(images) - 1:
+            await asyncio.sleep(DIGITIZE_BATCH_DELAY_SECONDS)
+
+    return DigitizeBatchResponse(
+        total=len(images),
+        succeeded=succeeded,
+        failed=len(images) - succeeded,
+        results=results,
+    )
 
 
 __all__ = ["router"]
