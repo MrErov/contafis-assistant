@@ -22,6 +22,14 @@ pypdf
 pdf-inspector
 unstructured
 
+# OCR (PDFs escaneados e imágenes de recibos) — Spec 004 T11
+# pytesseract requiere el binario de Tesseract en el PATH (ver README).
+pytesseract
+Pillow
+# pdf2image solo se usa como fallback cuando el PDF no expone imágenes
+# incrustadas; requiere poppler en el PATH.
+pdf2image
+
 # HTTP, contratos y configuración
 httpx
 pydantic
@@ -30,4 +38,4 @@ pydantic-settings
 # Tests
 pytest
 pytest-mock
-pillow
+

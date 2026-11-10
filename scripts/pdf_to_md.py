@@ -20,12 +20,16 @@ import argparse
 import sys
 from pathlib import Path
 
-try:
-    import pdf_inspector
-except ImportError as exc:
-    raise RuntimeError(
-        "pdf-inspector no está disponible; instale con `pip install pdf-inspector`"
-    ) from exc
+
+def _pdf_inspector():
+    """Import diferido: el pipeline de OCR no necesita pdf-inspector."""
+    try:
+        import pdf_inspector
+    except ImportError as exc:
+        raise RuntimeError(
+            "pdf-inspector no está disponible; instale con `pip install pdf-inspector`"
+        ) from exc
+    return pdf_inspector
 
 
 def classify_pdf(pdf_path: Path) -> dict:
@@ -35,6 +39,7 @@ def classify_pdf(pdf_path: Path) -> dict:
     Returns:
         dict con claves: 'is_scanned' (bool), 'page_count' (int), 'metadata' (dict)
     """
+    pdf_inspector = _pdf_inspector()
     try:
         result = pdf_inspector.classify_pdf(str(pdf_path))
     except Exception as e:
@@ -68,6 +73,7 @@ def pdf_to_markdown(pdf_path: Path, output_path: Path | None = None) -> dict:
         output_path = pdf_path.with_suffix(".md")
     
     try:
+        pdf_inspector = _pdf_inspector()
         result = pdf_inspector.extract_pages_markdown(str(pdf_path))
         
         # Combinar el markdown de todas las páginas
@@ -96,18 +102,21 @@ def pdf_to_markdown(pdf_path: Path, output_path: Path | None = None) -> dict:
         }
 
 
-def process_corpus(input_dir: Path, output_dir: Path | None = None, force: bool = False) -> int:
+def process_corpus(input_dir: Path, output_dir: Path | None = None, force: bool = False, no_ocr: bool = False) -> int:
     """
     Procesa todos los PDFs en el directorio de entrada.
-    
+
     Args:
         input_dir: Directorio con archivos PDF
         output_dir: Directorio de salida (por defecto, mismo que input)
         force: Si True, sobrescribe archivos .md existentes
-    
+        no_ocr: Si True, omite los PDFs escaneados en lugar de aplicarles OCR
+
     Returns:
         Número de archivos procesados exitosamente
     """
+    from ocr_to_md import ocr_to_markdown  # import local: OCR es opcional
+
     if output_dir is None:
         output_dir = input_dir
     
@@ -133,11 +142,23 @@ def process_corpus(input_dir: Path, output_dir: Path | None = None, force: bool 
         classification = classify_pdf(pdf_path)
         
         if classification.get("needs_ocr", True):
-            print(f"  [WARN] {pdf_path.name} parece ser un PDF escaneado (needs OCR)")
+            print(f"  [OCR] {pdf_path.name} parece ser un PDF escaneado (needs OCR)")
             print(f"     Clasificación: scanned={classification['is_scanned']}, pages={classification['page_count']}")
             if classification.get("metadata", {}).get("error"):
                 print(f"     Error en clasificación: {classification['metadata']['error']}")
-            print(f"     Se omite la conversión a Markdown (necesita OCR)")
+            if no_ocr:
+                print("     Se omite (--no-ocr activo)")
+                continue
+            # Antes se omitía el archivo: ahora cae al pipeline de OCR.
+            result = ocr_to_markdown(pdf_path, output_dir)
+            if result["skipped"]:
+                print(f"  [SKIP] {result['error']}")
+                continue
+            if result["success"]:
+                print(f"  [OK] OCR -> {result['output_path']} ({len(result['markdown'])} caracteres)")
+                success_count += 1
+            else:
+                print(f"  [ERROR] OCR falló: {result['error']}")
             continue
         
         print(f"  [OK] PDF nativo detectado ({classification['page_count']} páginas)")
@@ -187,6 +208,11 @@ Ejemplos:
         action="store_true",
         help="Solo clasificar PDFs, no convertir a Markdown"
     )
+    parser.add_argument(
+        "--no-ocr",
+        action="store_true",
+        help="Omitir los PDFs escaneados en lugar de aplicarles OCR con Tesseract"
+    )
     
     args = parser.parse_args()
     
@@ -203,7 +229,7 @@ Ejemplos:
                   f"pages={classification['page_count']}, needs_ocr={classification.get('needs_ocr', True)}")
         return 0
     
-    success = process_corpus(args.input_dir, args.output_dir, args.force)
+    success = process_corpus(args.input_dir, args.output_dir, args.force, args.no_ocr)
     
     print(f"\n[OK] Procesamiento completado: {success} archivo(s) convertido(s)")
     return 0 if success > 0 else 0
