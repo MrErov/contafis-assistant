@@ -61,6 +61,7 @@ def test_production_gate_with_attestation_passes():
         chroma_path="data/test-chroma",
         app_env="production",
         odoo_readonly_attested=True,
+        api_shared_secret="test-secret",
     )
 
     assert settings.app_env == "production"
