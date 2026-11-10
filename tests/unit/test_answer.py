@@ -349,3 +349,95 @@ def test_composer_output_grounded_in_chunk_text_is_kept():
     )
 
     assert answer == "Debe declarar por el portal del Seniat."
+
+
+def test_citation_coming_from_chunk_text_is_grounded():
+    """La cita vale si el artículo figura en el cuerpo del fragmento.
+
+    Los metadatos (section/locator) pueden no traer el número de artículo; el
+    cuerpo del chunk sí. Rechazarlo hacía caer toda respuesta normativa al
+    render determinista.
+    """
+    source = SOURCE.model_copy(
+        update={
+            "section": None,
+            "locator": None,
+            "text": "Artículo 56: la alícuota será de hasta quince por ciento.",
+        }
+    )
+    context = _context(Status.ok, intent=Intent.normativa, sources=[source])
+
+    candidate = "Según el Artículo 56, la alícuota será de hasta quince por ciento."
+
+    assert validate_grounding(candidate, context) is True
+    assert compose_answer(context, composer=lambda _: candidate) == candidate
+
+
+def test_invented_citation_still_falls_back_with_chunk_text():
+    source = SOURCE.model_copy(
+        update={
+            "section": None,
+            "locator": None,
+            "text": "Artículo 56: la alícuota será de hasta quince por ciento.",
+        }
+    )
+    context = _context(Status.ok, intent=Intent.normativa, sources=[source])
+
+    answer = compose_answer(
+        context,
+        composer=lambda _: "Según el Artículo 99 de la Ley de IVA.",
+    )
+
+    assert answer == render_answer(context)
+    assert "Artículo 99" not in answer
+
+
+def test_gaceta_citation_with_decimal_number_is_grounded():
+    """Regresión: 'Gaceta Oficial N° 6.978' debe validar contra 'Gaceta Oficial 6.978'.
+
+    El patrón truncaba el número a '6' y la keyword no era contigua al número,
+    así que toda mención a la gaceta era rechazada.
+    """
+    source = Source(
+        document_id="doc-9",
+        document="Gaceta Oficial 6.978 Extraordinaria - Ley de Hidrocarburos",
+        page=None,
+        section=None,
+        locator="markdown",
+        chunk_id="c9",
+        score=1 / 61,
+        collection="contafis_normativa_v1",
+        text="Artículo 56: la alícuota será de hasta quince por ciento.",
+    )
+    context = _context(Status.ok, intent=Intent.normativa, sources=[source])
+
+    candidate = (
+        "Según la Gaceta Oficial N° 6.978 Extraordinaria, la alícuota del "
+        "impuesto integrado será de hasta quince por ciento."
+    )
+
+    assert validate_grounding(candidate, context) is True
+    assert compose_answer(context, composer=lambda _: candidate) == candidate
+
+
+def test_invented_gaceta_number_is_rejected():
+    source = Source(
+        document_id="doc-9",
+        document="Gaceta Oficial 6.978 Extraordinaria - Ley de Hidrocarburos",
+        page=None,
+        section=None,
+        locator="markdown",
+        chunk_id="c9",
+        score=1 / 61,
+        collection="contafis_normativa_v1",
+        text="Artículo 56: la alícuota será de hasta quince por ciento.",
+    )
+    context = _context(Status.ok, intent=Intent.normativa, sources=[source])
+
+    answer = compose_answer(
+        context,
+        composer=lambda _: "La Gaceta Oficial 9.999 establece otro criterio.",
+    )
+
+    assert answer == render_answer(context)
+    assert "9.999" not in answer

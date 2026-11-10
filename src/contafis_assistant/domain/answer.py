@@ -45,13 +45,17 @@ _ID_CLAIM = re.compile(
     r"(?i)\b(?:id|ids|identificador|c[oó]digo)\b[^\d]{0,10}(\d+)"
 )
 _PAGE_CLAIM = re.compile(r"(?i)\b(?:p[aá]gina|p[aá]g\.?|p\.)\s*(\d+)")
-_CITATION_PATTERNS = (
-    re.compile(r"(?i)\bart(?:[ií]culo|\.)\s*(\d+[a-z]?)"),
-    re.compile(r"(?i)\bgaceta(?:\s+oficial)?(?:\s+n[.º°o]*)?\s*(\d+)"),
-    re.compile(r"(?i)\bprovidencia(?:\s+n[.º°o]*)?\s*(\d+)"),
-    re.compile(r"(?i)\bdecreto(?:\s+n[.º°o]*)?\s*(\d+)"),
-    re.compile(r"(?i)\bresoluci[oó]n(?:\s+n[.º°o]*)?\s*(\d+)"),
+# Reglas de cita: (keyword canónica, patrón del identificador).
+# El número admite decimales con separador latino ("6.978"): truncarlo a "6"
+# hacía que toda mención a la Gaceta Oficial fallara el grounding.
+_CITATION_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("articulo", re.compile(r"(?i)\bart(?:[ií]culo|\.)\s*(\d+[a-z]?)")),
+    ("gaceta", re.compile(r"(?i)\bgaceta(?:\s+oficial)?(?:\s+n[.º°o]*)?\s*(\d+(?:[.,]\d+)*)")),
+    ("providencia", re.compile(r"(?i)\bprovidencia(?:\s+n[.º°o]*)?\s*(\d+(?:[.,]\d+)*)")),
+    ("decreto", re.compile(r"(?i)\bdecreto(?:\s+n[.º°o]*)?\s*(\d+(?:[.,]\d+)*)")),
+    ("resolucion", re.compile(r"(?i)\bresoluci[oó]n(?:\s+n[.º°o]*)?\s*(\d+(?:[.,]\d+)*)")),
 )
+_CITATION_PATTERNS = tuple(pattern for _, pattern in _CITATION_RULES)
 
 _UI_WORDS = {
     "no",
@@ -418,34 +422,27 @@ def _collect_numbers(context: AnswerContext) -> tuple[set[str], set[str], set[st
     return totals, identifiers, pages, broad
 
 
-def _citation_spans(candidate: str) -> list[re.Match[str]]:
-    spans: list[re.Match[str]] = []
-    for pattern in _CITATION_PATTERNS:
-        spans.extend(pattern.finditer(candidate))
-    return spans
-
-
-def _citation_name(match: re.Match[str]) -> str:
-    raw = match.group(0).casefold()
-    if raw.startswith("art"):
-        kind = "articulo"
-    elif raw.startswith("gaceta"):
-        kind = "gaceta"
-    elif raw.startswith("providencia"):
-        kind = "providencia"
-    elif raw.startswith("decreto"):
-        kind = "decreto"
-    else:
-        kind = "resolucion"
-    return f"{kind} {match.group(1).casefold()}"
+def _citation_claims(candidate: str) -> list[tuple[str, str]]:
+    """Citas declaradas por el texto: pares (keyword canónica, identificador)."""
+    claims: list[tuple[str, str]] = []
+    for kind, pattern in _CITATION_RULES:
+        for match in pattern.finditer(candidate):
+            claims.append((kind, match.group(1)))
+    return claims
 
 
 def _valid_citations(candidate: str, context: AnswerContext) -> bool:
-    matches = _citation_spans(candidate)
-    if not matches:
+    claims = _citation_claims(candidate)
+    if not claims:
         return True
     if not context.sources:
         return False
+    # ``source.text`` es parte del material entregado al composer: una cita es
+    # válida si la palabra clave y el identificador figuran en los metadatos O
+    # en el cuerpo del fragmento recuperado. Antes sólo se miraban metadatos, lo
+    # que rechazaba toda cita extraída del chunk y caía al render determinista.
+    # La keyword y el número no necesitan ser contiguos: los chunks de Markdown
+    # traen el documento como metadato y el artículo dentro del texto.
     allowed = _normalize(
         "\n".join(
             " ".join(
@@ -454,13 +451,14 @@ def _valid_citations(candidate: str, context: AnswerContext) -> bool:
                     source.document,
                     source.section or "",
                     source.locator or "",
+                    source.text,
                 )
                 if part
             )
             for source in context.sources
         )
     )
-    return all(_citation_name(match) in allowed for match in matches)
+    return all(kind in allowed and number in allowed for kind, number in claims)
 
 
 def _valid_dates(candidate: str, context: AnswerContext) -> bool:
@@ -478,7 +476,10 @@ def _valid_claimed_numbers(
 
     stripped = _DATE_DDMMYYYY.sub(" ", candidate)
     stripped = _DATE_ISO.sub(" ", stripped)
-    for match in sorted(_citation_spans(candidate), key=lambda item: -item.start()):
+    citation_matches: list[re.Match[str]] = []
+    for pattern in _CITATION_PATTERNS:
+        citation_matches.extend(pattern.finditer(candidate))
+    for match in sorted(citation_matches, key=lambda item: -item.start()):
         stripped = stripped[: match.start()] + " " + stripped[match.end() :]
 
     for value in _TOTAL_CLAIM.findall(stripped):
