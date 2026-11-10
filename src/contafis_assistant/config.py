@@ -95,7 +95,10 @@ class Settings(BaseSettings):
     session_max_age_hours: int = Field(default=24, ge=1)
 
     # Digitize (Spec 006)
-    digitize_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
+    # NIM vision (llama-3.2-90b-vision-instruct) tarda 30-65s con few-shots +
+    # imagen: el default anterior (30s) causaba 503 sistemáticos. El máximo
+    # admitido por NVIDIA NIM no supera los 120s.
+    digitize_timeout_seconds: float = Field(default=90.0, ge=5.0, le=120.0)
     digitize_max_image_mb: int = Field(default=5, ge=1, le=20)
 
     @field_validator("api_shared_secret", mode="before")

@@ -230,3 +230,11 @@ def test_classifier_model_can_be_overridden_without_touching_vision(settings_env
     assert settings.classifier_model_id == "deepseek-ai/deepseek-v4.1-flash"
     # El LLM de visión (digitize) conserva su modelo.
     assert settings.llm_model == "gpt-test"
+
+
+def test_digitize_timeout_survives_real_nim_vision_latency(settings_env):
+    """NIM vision tarda 30-65s con few-shots: el default debe cubrirlo."""
+    settings = Settings(_env_file=None)
+
+    assert settings.digitize_timeout_seconds >= 90
+    assert settings.digitize_timeout_seconds <= 120
