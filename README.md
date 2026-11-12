@@ -3,7 +3,7 @@
 > Asistente fiscal conversacional con RAG y LangGraph para el ecosistema ContaFis.
 > Demo pública de la arquitectura. El código de producción está disponible bajo NDA.
 
-[![Tests](https://img.shields.io/badge/Tests-897+-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-927+-brightgreen)]()
 [![Python](https://img.shields.io/badge/Python-3.10+-blue)]()
 [![LangChain](https://img.shields.io/badge/LangChain-1.x-green)]()
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.x-orange)]()
@@ -40,7 +40,7 @@ con trazabilidad completa spec → tests → código:
 ```
 +------------------+         +------------------+         +------------------+
 |  Odoo 19 (ERP)   |<------->|  FastAPI Backend |<------->|  LangGraph Agent |
-|  Bot en Discuss  |  JSON-2 |  897+ tests TDD  |         |  RAG + Tool Call |
+|  Bot en Discuss  |  JSON-2 |  927+ tests TDD (927 passed, 14 skipped)  |         |  RAG + Tool Call |
 +------------------+         +------------------+         +------------------+
                                                                     |
                                                                     v
@@ -65,7 +65,7 @@ RAG Retriever (RRF fusion) --> Answer Composer (LLM + grounding)
 - 📝 **Answer Composer con grounding**: LLM redacta respuesta usando SOLO fragmentos recuperados; `validate_grounding` descarta alucinaciones (cae a determinista).
 - 🛡️ **Seguridad**: redacción de PII, defensa contra prompt injection, tokens por usuario, fail-closed en producción.
 - 📊 **Observabilidad**: trazabilidad completa en LangSmith (habilitado por defecto en desarrollo).
-- ✅ **897+ tests**: TDD estricto con cobertura de casos límite y acceptance/security tests.
+- ✅ **927+ tests (927 passed, 14 skipped)**: TDD estricto con cobertura de casos límite y acceptance/security tests. *Conteo reportado por la suite pytest; el badge puede variar según inclusiones de acceptance/security.*
 - 🐳 **Dockerizado**: ver [Runbook de despliegue](docs/DEPLOY.md).
 
 ## 📚 Documentación técnica
