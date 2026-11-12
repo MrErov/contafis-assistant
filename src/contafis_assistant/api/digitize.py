@@ -167,6 +167,7 @@ class DigitizeService:
         except Exception as e:
             logger.exception("Error llamando a NIM vision")
             logger.warning("NIM raw error: %s: %s", type(e).__name__, e)
+            logger.exception("NIM FATAL ERROR:")
             # Detectar timeout
             if "timeout" in str(e).lower() or "timed out" in str(e).lower():
                 raise NIMTimeoutError(f"Timeout llamando a NIM: {e}") from e
