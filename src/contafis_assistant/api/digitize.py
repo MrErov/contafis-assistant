@@ -51,6 +51,7 @@ Reglas críticas:
     usa null. NO inventes.
 """
 
+
 # ============================================================================
 # Excepciones
 # ============================================================================
@@ -177,19 +178,105 @@ class DigitizeService:
         if not content or not isinstance(content, str):
             raise NIMParsingError("Respuesta vacía o no string de NIM")
         
+        # Log de respuesta cruda para debugging
+        logger.warning("NIM RAW RESPONSE: %s", content[:2000])
+        
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as e:
             logger.error("Respuesta NIM no es JSON válido: %s", content[:500])
             raise NIMParsingError(f"Respuesta NIM no es JSON válido: {e}") from e
         
-        # Validar estructura mínima
+        # Normalizar respuesta de NIM: puede venir flat (campos en raíz) o nested (bajo "extracted")
+        # NIM devuelve flat: {"document_type": "...", "confidence": 0.8, "supplier_name": "...", ...}
+        # Nuestro código espera nested: {"document_type": "...", "confidence": 0.8, "extracted": {...}}
+        parsed = self._normalize_nim_response(parsed)
+        
+        # Validar estructura mínima (ya normalizada)
         required_keys = {"document_type", "confidence", "extracted"}
         if not all(k in parsed for k in required_keys):
             raise NIMParsingError(f"Respuesta NIM faltan claves requeridas: {required_keys - set(parsed.keys())}")
         
         return parsed
-    
+
+    @staticmethod
+    def _normalize_nim_response(parsed: dict[str, Any]) -> dict[str, Any]:
+        """Normaliza respuesta de NIM a estructura esperada con 'extracted'.
+
+        NIM devuelve estructura flat (campos en raíz). Convertimos a nested
+        moviendo todos los campos de factura bajo la clave 'extracted'.
+        """
+        # Si ya tiene 'extracted', asumimos que está bien
+        if "extracted" in parsed:
+            return parsed
+
+        # Campos que pertenecen a la factura (no metadata como document_type/confidence)
+        # Incluye nombres de campos estándar + nombres que usa NIM real
+        invoice_fields = {
+            # Nombres estándar (fallback)
+            "supplier_name", "supplier_rif", "supplier_address",
+            "invoice_number", "control_number", "invoice_date", "due_date",
+            "currency", "subtotal", "iva_rate", "iva_amount", "igtf_rate", "igtf_amount",
+            "total", "total_amount", "invoice_amount",
+            "lines", "credit_note_ref", "debit_note_ref",
+            "customer_name", "customer_rif", "customer_address",
+            # Nombres que usa NIM real (vistos en respuesta cruda - varían entre llamadas)
+            "RIF", "date", "number", "amount_iva", "amount_igtf",
+            "amount_base", "amount_exempt", "amount_discount",
+            "document_date", "document_number", "document_total", "amount", "iva", "igtf",
+            "VAT", "IGTF", "VAT_amount", "IGTF_amount",
+        }
+
+        extracted = {}
+        for key, value in parsed.items():
+            if key in invoice_fields:
+                extracted[key] = value
+
+        # Mapear nombres de campos de NIM a nombres estándar internos
+        field_mapping = {
+            "RIF": "supplier_rif",
+            "date": "invoice_date",
+            "document_date": "invoice_date",
+            "number": "invoice_number",
+            "document_number": "invoice_number",
+            "amount": "total",
+            "amount_iva": "iva_amount",
+            "iva": "iva_amount",
+            "VAT": "iva_rate",
+            "VAT_amount": "iva_amount",
+            "amount_igtf": "igtf_amount",
+            "igtf": "igtf_amount",
+            "IGTF": "igtf_rate",
+            "IGTF_amount": "igtf_amount",
+            "document_total": "total",
+            "amount_base": "subtotal",
+            "amount_exempt": "iva_exempt",
+            "amount_discount": "discount",
+        }
+        for nim_key, std_key in field_mapping.items():
+            if nim_key in extracted:
+                extracted[std_key] = extracted.pop(nim_key)
+
+        # Mapear nombres de campos alternativos (estándar)
+        if "total_amount" in extracted and "total" not in extracted:
+            extracted["total"] = extracted.pop("total_amount")
+        if "invoice_amount" in extracted and "subtotal" not in extracted:
+            extracted["subtotal"] = extracted.pop("invoice_amount")
+        # NIM usa supplier_rif pero puede venir con un dígito extra (ej: J-999999999-9)
+        if "supplier_rif" in extracted:
+            rif = extracted["supplier_rif"]
+            if isinstance(rif, str) and rif.count("-") == 2:
+                parts = rif.split("-")
+                if len(parts[1]) == 9:  # 9 dígitos en lugar de 8
+                    # Quitar el dígito extra del medio (asumimos que es el check digit duplicado)
+                    extracted["supplier_rif"] = f"{parts[0]}-{parts[1][:8]}-{parts[2]}"
+
+        return {
+            "document_type": parsed.get("document_type", "factura_z"),
+            "confidence": parsed.get("confidence", 0.5),
+            "extracted": extracted,
+        }
+
     def _parse_extracted(self, extracted_dict: dict[str, Any]) -> ExtractedInvoice:
         """Parsea dict extraído a ExtractedInvoice, tolerando campos faltantes."""
         # Asegurar lines es lista
@@ -225,7 +312,7 @@ class DigitizeService:
             credit_note_ref=extracted_dict.get("credit_note_ref"),
             debit_note_ref=extracted_dict.get("debit_note_ref"),
         )
-    
+
     def digitize(self, request: DigitizeRequest) -> DigitizeResponse:
         """Ejecuta digitalización completa: LLM → parseo → validaciones → response."""
         # 1. Construir messages
