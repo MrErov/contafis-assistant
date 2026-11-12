@@ -409,27 +409,22 @@ def test_build_messages_includes_system_and_fewshots():
     
     messages = service._build_messages(req)
     
-    # Debe tener: system + 3 few-shots (user+assistant c/u) + user final
+    # Debe tener: system + user final con imagen
     # system = 1 mensaje
-    # 3 few-shots = 6 mensajes (user + assistant)
     # user final = 1 mensaje
-    # Total = 8 mensajes
-    assert len(messages) == 8
+    # Total = 2 mensajes (se eliminaron los few-shots para que el LLM
+    # lea la imagen real en lugar de copiar el ejemplo)
+    assert len(messages) == 2
     
     # Primer mensaje = system
     assert messages[0]["role"] == "system"
     assert "extractor experto" in messages[0]["content"].lower()
+    assert "IMAGEN REAL" in messages[0]["content"]
     
-    # Few-shots: user/assistant alternados
-    for i in range(1, 7, 2):
-        assert messages[i]["role"] == "user"
-        assert messages[i+1]["role"] == "assistant"
-        # Assistant debe ser JSON válido
-        content = messages[i+1]["content"]
-        parsed = json.loads(content)
-        assert "document_type" in parsed
-        assert "confidence" in parsed
-        assert "extracted" in parsed
+    # No debe haber few-shots (pares user/assistant de ejemplo)
+    # que hicieran que el LLM copiara el ejemplo en lugar de leer la imagen.
+    assistant_msgs = [m for m in messages if m["role"] == "assistant"]
+    assert assistant_msgs == [], "No debe haber mensajes assistant de few-shot"
     
     # Último mensaje = user con imagen
     assert messages[-1]["role"] == "user"

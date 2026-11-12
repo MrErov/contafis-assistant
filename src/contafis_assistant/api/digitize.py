@@ -43,98 +43,13 @@ Reglas críticas:
 6. `document_type`: "factura_z", "nota_credito" o "nota_debito".
 7. Para nota_credito/debito: incluir `credit_note_ref` o `debit_note_ref` con número de factura original.
 8. `confidence`: 0.0–1.0 según legibilidad global de la imagen.
+9. Analiza la IMAGEN REAL adjunta. Devuelve SOLO los datos de esa imagen.
+10. NO copies, ni reproduzcas, ni uses como plantilla ningún ejemplo
+    (supplier_name, RIF, montos, fechas, líneas). Cualquier ejemplo es solo
+    ilustrativo del formato JSON, nunca del contenido.
+11. Cada campo debe leerse de la imagen real; si un campo no es legible,
+    usa null. NO inventes.
 """
-
-FEWSHOT_FACTURA_Z = {
-    "role": "user",
-    "content": "Extrae los datos de esta factura tipo Z.",
-}
-FEWSHOT_FACTURA_Z_RESPONSE = {
-    "role": "assistant",
-    "content": json.dumps({
-        "document_type": "factura_z",
-        "confidence": 0.95,
-        "extracted": {
-            "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-9",
-            "invoice_number": "001-001-00001234",
-            "control_number": "ABC1234567890",
-            "invoice_date": "2026-10-15",
-            "due_date": "2026-11-15",
-            "currency": "USD",
-            "subtotal": 100.00,
-            "iva_rate": 0.16,
-            "iva_amount": 16.00,
-            "igtf_rate": 0.03,
-            "igtf_amount": 3.00,
-            "total": 119.00,
-            "lines": [{"description": "Servicios contables oct 2026", "quantity": 1, "unit_price": 100.00, "total": 100.00}],
-            "credit_note_ref": None,
-            "debit_note_ref": None,
-        }
-    }, ensure_ascii=False),
-}
-
-FEWSHOT_NOTA_CREDITO = {
-    "role": "user",
-    "content": "Extrae los datos de esta nota de crédito.",
-}
-FEWSHOT_NOTA_CREDITO_RESPONSE = {
-    "role": "assistant",
-    "content": json.dumps({
-        "document_type": "nota_credito",
-        "confidence": 0.92,
-        "extracted": {
-            "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-9",
-            "invoice_number": "001-001-00001235",
-            "control_number": "DEF0987654321",
-            "invoice_date": "2026-10-20",
-            "due_date": None,
-            "currency": "USD",
-            "subtotal": -50.00,
-            "iva_rate": 0.16,
-            "iva_amount": -8.00,
-            "igtf_rate": 0.03,
-            "igtf_amount": -1.50,
-            "total": -59.50,
-            "lines": [{"description": "Devolución servicio sep 2026", "quantity": 1, "unit_price": -50.00, "total": -50.00}],
-            "credit_note_ref": "001-001-00001234",
-            "debit_note_ref": None,
-        }
-    }, ensure_ascii=False),
-}
-
-FEWSHOT_NOTA_DEBITO = {
-    "role": "user",
-    "content": "Extrae los datos de esta nota de débito.",
-}
-FEWSHOT_NOTA_DEBITO_RESPONSE = {
-    "role": "assistant",
-    "content": json.dumps({
-        "document_type": "nota_debito",
-        "confidence": 0.90,
-        "extracted": {
-            "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-9",
-            "invoice_number": "001-001-00001236",
-            "control_number": "GHI5555555555",
-            "invoice_date": "2026-10-25",
-            "due_date": "2026-11-25",
-            "currency": "USD",
-            "subtotal": 25.00,
-            "iva_rate": 0.16,
-            "iva_amount": 4.00,
-            "igtf_rate": 0.03,
-            "igtf_amount": 0.75,
-            "total": 29.75,
-            "lines": [{"description": "Ajuste por diferencia de tasa", "quantity": 1, "unit_price": 25.00, "total": 25.00}],
-            "credit_note_ref": None,
-            "debit_note_ref": "001-001-00001234",
-        }
-    }, ensure_ascii=False),
-}
-
 
 # ============================================================================
 # Excepciones
@@ -188,13 +103,15 @@ class DigitizeService:
     
     def _build_messages(self, request: DigitizeRequest) -> list[dict[str, Any]]:
         """Construye lista de messages para LLM Vision.
-        
+
         Estructura:
-        1. System prompt
-        2. Few-shot 1: Factura Z (user + assistant)
-        3. Few-shot 2: Nota de crédito (user + assistant)
-        4. Few-shot 3: Nota de débito (user + assistant)
-        5. User final con imagen
+        1. System prompt (incluye la regla de NO copiar ejemplos)
+        2. User final con la imagen real (image_url base64)
+
+        Nota: se eliminaron los few-shots (pares user/assistant con JSON de
+        ejemplo) porque el modelo, forzado a JSON por ``response_format``,
+        copiaba el ejemplo del few-shot en lugar de leer la imagen real
+        adjunta.
         """
         # Determinar MIME type desde extensión
         ext = request.filename.lower().split('.')[-1]
@@ -229,12 +146,6 @@ class DigitizeService:
         
         return [
             {"role": "system", "content": SYSTEM_PROMPT},
-            FEWSHOT_FACTURA_Z,
-            FEWSHOT_FACTURA_Z_RESPONSE,
-            FEWSHOT_NOTA_CREDITO,
-            FEWSHOT_NOTA_CREDITO_RESPONSE,
-            FEWSHOT_NOTA_DEBITO,
-            FEWSHOT_NOTA_DEBITO_RESPONSE,
             user_message,
         ]
     
