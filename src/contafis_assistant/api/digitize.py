@@ -31,24 +31,46 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 SYSTEM_PROMPT = """Eres un extractor experto de facturas venezolanas (tipo Z, notas de crédito/débito).
-Recibes una imagen y devuelves SOLO un objeto JSON válido con los campos especificados.
-NO incluyas prosa, explicaciones, ni markdown. Solo el JSON.
+Recibes una imagen y devuelves SOLO un objeto JSON válido. NO incluyas prosa, explicaciones ni markdown.
+
+Esquema EXACTO (usa estas claves, sin renombrarlas ni anidarlas):
+{
+  "document_type": "factura_z" | "nota_credito" | "nota_debito",
+  "confidence": 0.0,
+  "supplier_name": null,
+  "supplier_rif": null,
+  "supplier_address": null,
+  "customer_name": null,
+  "customer_rif": null,
+  "customer_address": null,
+  "invoice_number": null,
+  "control_number": null,
+  "invoice_date": null,
+  "due_date": null,
+  "currency": "VES",
+  "subtotal": null,
+  "iva_rate": null,
+  "iva_amount": null,
+  "igtf_rate": null,
+  "igtf_amount": null,
+  "total": null,
+  "lines": [{"description": null, "quantity": 0, "unit_price": 0, "total": 0}],
+  "credit_note_ref": null,
+  "debit_note_ref": null
+}
 
 Reglas críticas:
 1. RIF venezolano: formato J-12345678-9, V-12345678-9, E-12345678-9, G-12345678-9 (módulo 11).
 2. Fechas en YYYY-MM-DD.
-3. Montos en número decimal (punto decimal), sin separadores de miles.
+3. Montos en número decimal con punto, sin separadores de miles.
 4. IVA estándar 16% (0.16), IGTF 3% (0.03) si aplica.
-5. Si un campo no es legible, usa null. NO inventes.
-6. `document_type`: "factura_z", "nota_credito" o "nota_debito".
-7. Para nota_credito/debito: incluir `credit_note_ref` o `debit_note_ref` con número de factura original.
-8. `confidence`: 0.0–1.0 según legibilidad global de la imagen.
-9. Analiza la IMAGEN REAL adjunta. Devuelve SOLO los datos de esa imagen.
-10. NO copies, ni reproduzcas, ni uses como plantilla ningún ejemplo
-    (supplier_name, RIF, montos, fechas, líneas). Cualquier ejemplo es solo
-    ilustrativo del formato JSON, nunca del contenido.
-11. Cada campo debe leerse de la imagen real; si un campo no es legible,
-    usa null. NO inventes.
+5. `currency` solo puede ser "VES" o "USD".
+6. Si un campo no es legible, usa null. NO inventes.
+7. `document_type`: "factura_z", "nota_credito" o "nota_debito".
+8. Para nota_credito/debito: incluir `credit_note_ref` o `debit_note_ref` con el número de factura original.
+9. `confidence`: 0.0–1.0 según legibilidad global de la imagen.
+10. Analiza la IMAGEN REAL adjunta. Devuelve SOLO los datos de esa imagen.
+11. NO copies, ni reproduzcas, ni uses como plantilla ningún ejemplo.
 """
 
 
@@ -247,7 +269,8 @@ class DigitizeService:
             "document_date", "document_number", "document_total", "amount", "iva", "igtf",
             "VAT", "IGTF", "VAT_amount", "IGTF_amount",
             # Alias observados en nemotron-3.5-super-vl
-            "issue_date", "emission_date", "items", "tax_base", "tax_amount",
+            "issue_date", "emission_date", "items", "line_items",
+            "tax_base", "taxable_base", "tax_amount", "igft_amount", "igft_rate",
         }
 
         extracted = {}
@@ -265,6 +288,7 @@ class DigitizeService:
             "number": "invoice_number",
             "document_number": "invoice_number",
             "items": "lines",
+            "line_items": "lines",
             "amount": "total",
             "amount_iva": "iva_amount",
             "tax_amount": "iva_amount",
@@ -272,12 +296,15 @@ class DigitizeService:
             "VAT": "iva_rate",
             "VAT_amount": "iva_amount",
             "amount_igtf": "igtf_amount",
+            "igft_amount": "igtf_amount",
             "igtf": "igtf_amount",
             "IGTF": "igtf_rate",
             "IGTF_amount": "igtf_amount",
+            "igft_rate": "igtf_rate",
             "document_total": "total",
             "amount_base": "subtotal",
             "tax_base": "subtotal",
+            "taxable_base": "subtotal",
             "amount_exempt": "iva_exempt",
             "amount_discount": "discount",
         }
