@@ -632,3 +632,125 @@ def test_digitize_service_amount_mismatch_warning(monkeypatch):
     assert len(amount_warnings) == 1
     assert "119.00" in amount_warnings[0].message
     assert "120.00" in amount_warnings[0].message
+
+
+# ============================================================================
+# Tests de normalización de nombres de campo (NIM / nemotron)
+# ============================================================================
+
+def test_normalize_nim_response_nemotron_aliases():
+    """nemotron usa issue_date/items/tax_amount: deben mapearse a los estándar."""
+    from contafis_assistant.api.digitize import DigitizeService
+
+    raw = {
+        "document_type": "factura_z",
+        "confidence": 0.85,
+        "supplier_name": "Ferregangas de Barinas, C.A.",
+        "supplier_rif": "J-29672957-3",
+        "invoice_number": "000947",
+        "issue_date": "2012-03-12",
+        "items": [
+            {
+                "description": "Blanco Brillante Corto",
+                "quantity": 1,
+                "unit_price": 40.17,
+                "total": 40.17,
+            }
+        ],
+        "subtotal": 191.96,
+        "tax_amount": 23.04,
+        "total": 215.00,
+        "currency": "VEF",
+    }
+
+    out = DigitizeService._normalize_nim_response(raw)
+    extracted = out["extracted"]
+
+    assert out["document_type"] == "factura_z"
+    assert out["confidence"] == 0.85
+    assert extracted["supplier_rif"] == "J-29672957-3"
+    assert extracted["invoice_date"] == "2012-03-12"
+    assert extracted["iva_amount"] == 23.04
+    assert extracted["lines"][0]["description"] == "Blanco Brillante Corto"
+    assert extracted["total"] == 215.00
+    # Los alias no deben sobrevivir en la respuesta normalizada.
+    assert "issue_date" not in extracted
+    assert "items" not in extracted
+    assert "tax_amount" not in extracted
+
+
+def test_normalize_nim_response_nested_supplier_customer():
+    """El 90B devuelve supplier/customer anidados: deben aplanarse."""
+    from contafis_assistant.api.digitize import DigitizeService
+
+    raw = {
+        "document_type": "factura_z",
+        "confidence": 0.9,
+        "supplier": {
+            "name": "Proveedor X",
+            "rif": "J-12345678-1",
+            "address": "Av. 1",
+        },
+        "customer": {
+            "name": "Cliente Y",
+            "rif": "V-12345678-8",
+        },
+        "date": "2026-01-02",
+        "invoice_number": "0001",
+        "total": 119.00,
+    }
+
+    out = DigitizeService._normalize_nim_response(raw)
+    extracted = out["extracted"]
+
+    assert extracted["supplier_name"] == "Proveedor X"
+    assert extracted["supplier_rif"] == "J-12345678-1"
+    assert extracted["supplier_address"] == "Av. 1"
+    assert extracted["customer_name"] == "Cliente Y"
+    assert extracted["customer_rif"] == "V-12345678-8"
+    assert extracted["invoice_date"] == "2026-01-02"
+    assert extracted["total"] == 119.00
+    assert "supplier" not in extracted
+    assert "customer" not in extracted
+
+
+@pytest.mark.parametrize(
+    ("model", "expect_thinking_flag"),
+    [
+        ("nvidia/nemotron-3.5-super-vl-120b-a12b", True),
+        ("meta/llama-3.2-90b-vision-instruct", False),
+    ],
+)
+def test_get_llm_thinking_flag(monkeypatch, model, expect_thinking_flag):
+    """Solo nemotron recibe chat_template_kwargs para desactivar razonamiento."""
+    from contafis_assistant.api.digitize import DigitizeService
+    from contafis_assistant.config import Settings
+
+    captured: dict = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "contafis_assistant.api.digitize.ChatOpenAI", FakeChatOpenAI
+    )
+
+    settings = Settings(
+        ODOO_URL="http://localhost:8069",
+        ODOO_DB="contea",
+        ODOO_API_KEY="test",
+        OPENAI_API_KEY="test",
+        LLM_MODEL=model,
+        EMBEDDING_MODEL="text-embedding-3-small",
+        CHROMA_PATH="/tmp/chroma",
+        DIGITIZE_TIMEOUT_SECONDS=30.0,
+        DIGITIZE_MAX_IMAGE_MB=5,
+    )
+    DigitizeService(settings)._get_llm()
+
+    model_kwargs = captured["model_kwargs"]
+    if expect_thinking_flag:
+        assert model_kwargs["chat_template_kwargs"] == {"enable_thinking": False}
+    else:
+        assert "chat_template_kwargs" not in model_kwargs

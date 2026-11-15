@@ -88,17 +88,26 @@ class DigitizeService:
         self._llm: ChatOpenAI | None = None
     
     def _get_llm(self) -> ChatOpenAI:
-        """Inicializa ChatOpenAI para NIM vision (lazy)."""
+        """Inicializa ChatOpenAI para NIM vision (lazy).
+
+        Nemotron VL es un modelo de razonamiento: sin ``enable_thinking=False``
+        gasta todo el presupuesto de tokens en ``reasoning_content`` y devuelve
+        ``content=None``. Se envía solo a ese modelo para no arriesgar
+        compatibilidad con otros modelos de visión de NIM.
+        """
         if self._llm is None:
+            model_kwargs: dict[str, Any] = {
+                "response_format": {"type": "json_object"},
+            }
+            if "nemotron" in self.settings.llm_model.lower():
+                model_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
             self._llm = ChatOpenAI(
-                model=self.settings.llm_model,  # llama-3.2-90b-vision-instruct
+                model=self.settings.llm_model,
                 api_key=self.settings.openai_api_key.get_secret_value(),
                 base_url=self.settings.openai_base_url,
                 timeout=self.settings.digitize_timeout_seconds,
                 max_retries=1,
-                model_kwargs={
-                    "response_format": {"type": "json_object"},
-                },
+                model_kwargs=model_kwargs,
             )
         return self._llm
     
@@ -210,6 +219,15 @@ class DigitizeService:
         if "extracted" in parsed:
             return parsed
 
+        # Algunos modelos devuelven entidades anidadas (p. ej. el 90B:
+        # "supplier": {"name": ..., "rif": ...}). Aplanarlas antes de mapear.
+        normalized = dict(parsed)
+        for entity in ("supplier", "customer"):
+            nested = normalized.pop(entity, None)
+            if isinstance(nested, dict):
+                for key, value in nested.items():
+                    normalized[f"{entity}_{key}"] = value
+
         # Campos que pertenecen a la factura (no metadata como document_type/confidence)
         # Incluye nombres de campos estándar + nombres que usa NIM real
         invoice_fields = {
@@ -225,10 +243,12 @@ class DigitizeService:
             "amount_base", "amount_exempt", "amount_discount",
             "document_date", "document_number", "document_total", "amount", "iva", "igtf",
             "VAT", "IGTF", "VAT_amount", "IGTF_amount",
+            # Alias observados en nemotron-3.5-super-vl
+            "issue_date", "items", "tax_base", "tax_amount",
         }
 
         extracted = {}
-        for key, value in parsed.items():
+        for key, value in normalized.items():
             if key in invoice_fields:
                 extracted[key] = value
 
@@ -236,11 +256,14 @@ class DigitizeService:
         field_mapping = {
             "RIF": "supplier_rif",
             "date": "invoice_date",
+            "issue_date": "invoice_date",
             "document_date": "invoice_date",
             "number": "invoice_number",
             "document_number": "invoice_number",
+            "items": "lines",
             "amount": "total",
             "amount_iva": "iva_amount",
+            "tax_amount": "iva_amount",
             "iva": "iva_amount",
             "VAT": "iva_rate",
             "VAT_amount": "iva_amount",
@@ -250,11 +273,17 @@ class DigitizeService:
             "IGTF_amount": "igtf_amount",
             "document_total": "total",
             "amount_base": "subtotal",
+            "tax_base": "subtotal",
             "amount_exempt": "iva_exempt",
             "amount_discount": "discount",
         }
         for nim_key, std_key in field_mapping.items():
-            if nim_key in extracted:
+            if nim_key not in extracted:
+                continue
+            if std_key in extracted:
+                # El nombre estándar ya vino en la respuesta: descartar alias.
+                extracted.pop(nim_key)
+            else:
                 extracted[std_key] = extracted.pop(nim_key)
 
         # Mapear nombres de campos alternativos (estándar)
@@ -272,8 +301,8 @@ class DigitizeService:
                     extracted["supplier_rif"] = f"{parts[0]}-{parts[1][:8]}-{parts[2]}"
 
         return {
-            "document_type": parsed.get("document_type", "factura_z"),
-            "confidence": parsed.get("confidence", 0.5),
+            "document_type": normalized.get("document_type", "factura_z"),
+            "confidence": normalized.get("confidence", 0.5),
             "extracted": extracted,
         }
 
