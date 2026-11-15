@@ -100,4 +100,9 @@ redactados (no eliminados) y disponibles bajo NDA para:
 
 ## 📄 Licencia
 
-**Proprietary — All Rights Reserved**. Ver [LICENSE](LICENSE).
+Este proyecto es propietario y confidencial. Todos los derechos están reservados.
+Queda estrictamente prohibido el uso comercial, la copia o la distribución de este software sin el consentimiento explícito por escrito del autor. Para consultas sobre licencias comerciales, contactar a
+[eurickramiro.ospinovelasquez@gmail.com](mailto:eurickramiro.ospinovelasquez@gmail.com)
+o al [perfil de GitHub @MrErov](https://github.com/MrErov).
+
+Consulta el archivo [LICENSE](LICENSE) para el texto completo.
