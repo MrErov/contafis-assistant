@@ -77,11 +77,18 @@ def _odoo_authenticate() -> tuple[http.cookiejar.CookieJar, str | None]:
 
     odoo_url = os.getenv("ODOO_URL", "http://localhost:8090")
     odoo_db = os.getenv("ODOO_DB", "contea")
-    odoo_user = os.getenv("ODOO_USER", "admin")
-    odoo_password = os.getenv("ODOO_PASSWORD", "admin")
+    odoo_user = os.getenv("ODOO_USER")
+    odoo_password = os.getenv("ODOO_PASSWORD")
 
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+
+    if not odoo_user or not odoo_password:
+        print(
+            "[WARN] Define ODOO_USER y ODOO_PASSWORD, o TEST_USER_TOKEN "
+            "para autenticarte con la API key."
+        )
+        return cj, None
 
     login_payload = json.dumps({
         "jsonrpc": "2.0",
@@ -126,12 +133,24 @@ def intentar_endpoint(image_b64: str) -> dict[str, Any] | None:
     import urllib.request
 
     url = os.getenv("DIGITIZE_URL", "http://localhost:8000/digitize")
-    cj, session_id = _odoo_authenticate()
-    if not session_id:
-        print("[WARN] No se pudo obtener sesión de Odoo; saltando endpoint real.")
-        return None
+    headers = {"Content-Type": "application/json"}
 
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    api_key = os.getenv("API_SHARED_SECRET")
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    user_token = os.getenv("TEST_USER_TOKEN")
+    if user_token:
+        # Flujo legacy: API key personal de Odoo (no requiere password).
+        headers["X-User-Token"] = user_token
+        opener = urllib.request.build_opener()
+    else:
+        cj, session_id = _odoo_authenticate()
+        if not session_id:
+            print("[WARN] No se pudo obtener sesión de Odoo; saltando endpoint real.")
+            return None
+        headers["X-Odoo-Session"] = session_id
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
     payload = {
         "image_base64": image_b64,
@@ -142,10 +161,7 @@ def intentar_endpoint(image_b64: str) -> dict[str, Any] | None:
     req = urllib.request.Request(
         url,
         data=data,
-        headers={
-            "Content-Type": "application/json",
-            "X-Odoo-Session": session_id,
-        },
+        headers=headers,
         method="POST",
     )
     try:
