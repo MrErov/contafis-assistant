@@ -749,8 +749,10 @@ def test_get_llm_thinking_flag(monkeypatch, model, expect_thinking_flag):
     )
     DigitizeService(settings)._get_llm()
 
-    model_kwargs = captured["model_kwargs"]
+    extra_body = captured["extra_body"]
     if expect_thinking_flag:
-        assert model_kwargs["chat_template_kwargs"] == {"enable_thinking": False}
+        assert extra_body == {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }
     else:
-        assert "chat_template_kwargs" not in model_kwargs
+        assert extra_body is None

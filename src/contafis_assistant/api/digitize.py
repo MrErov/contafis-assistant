@@ -96,18 +96,21 @@ class DigitizeService:
         compatibilidad con otros modelos de visión de NIM.
         """
         if self._llm is None:
-            model_kwargs: dict[str, Any] = {
-                "response_format": {"type": "json_object"},
-            }
+            # ``extra_body`` viaja dentro del body HTTP sin convertirse en kwarg
+            # de ``Completions.parse()`` (que rechaza parámetros desconocidos).
+            extra_body = None
             if "nemotron" in self.settings.llm_model.lower():
-                model_kwargs["chat_template_kwargs"] = {"enable_thinking": False}
+                extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
             self._llm = ChatOpenAI(
                 model=self.settings.llm_model,
                 api_key=self.settings.openai_api_key.get_secret_value(),
                 base_url=self.settings.openai_base_url,
                 timeout=self.settings.digitize_timeout_seconds,
                 max_retries=1,
-                model_kwargs=model_kwargs,
+                model_kwargs={
+                    "response_format": {"type": "json_object"},
+                },
+                extra_body=extra_body,
             )
         return self._llm
     
