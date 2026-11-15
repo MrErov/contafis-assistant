@@ -53,7 +53,9 @@ class ExtractedLine(BaseModel):
 
 
 # Variantes que devuelve el LLM al leer el símbolo impreso en el recibo.
-_VES_ALIASES = frozenset({"ves", "bs", "bs.s", "bsf", "bsv", "bsfv", "bolivar", "bolivares"})
+_VES_ALIASES = frozenset(
+    {"ves", "vef", "bs", "bs.s", "bsf", "bsv", "bsfv", "bolivar", "bolivares"}
+)
 _USD_ALIASES = frozenset({"usd", "us$", "$", "usd$", "dolar", "dolares"})
 
 

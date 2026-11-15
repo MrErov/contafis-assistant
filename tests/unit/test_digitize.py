@@ -299,6 +299,7 @@ def test_extracted_invoice_missing_optional_fields():
     "raw,expected",
     [
         ("VES", "VES"),
+        ("VEF", "VES"),
         ("Bs", "VES"),
         ("Bs.", "VES"),
         ("Bs.S", "VES"),
@@ -712,6 +713,22 @@ def test_normalize_nim_response_nested_supplier_customer():
     assert extracted["total"] == 119.00
     assert "supplier" not in extracted
     assert "customer" not in extracted
+
+
+def test_normalize_nim_response_emission_date_alias():
+    """nemotron también puede devolver emission_date en lugar de invoice_date."""
+    from contafis_assistant.api.digitize import DigitizeService
+
+    raw = {
+        "document_type": "factura_z",
+        "confidence": 0.8,
+        "emission_date": "2026-02-03",
+        "total": 100.0,
+    }
+
+    out = DigitizeService._normalize_nim_response(raw)
+    assert out["extracted"]["invoice_date"] == "2026-02-03"
+    assert "emission_date" not in out["extracted"]
 
 
 @pytest.mark.parametrize(

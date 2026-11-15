@@ -247,7 +247,7 @@ class DigitizeService:
             "document_date", "document_number", "document_total", "amount", "iva", "igtf",
             "VAT", "IGTF", "VAT_amount", "IGTF_amount",
             # Alias observados en nemotron-3.5-super-vl
-            "issue_date", "items", "tax_base", "tax_amount",
+            "issue_date", "emission_date", "items", "tax_base", "tax_amount",
         }
 
         extracted = {}
@@ -260,6 +260,7 @@ class DigitizeService:
             "RIF": "supplier_rif",
             "date": "invoice_date",
             "issue_date": "invoice_date",
+            "emission_date": "invoice_date",
             "document_date": "invoice_date",
             "number": "invoice_number",
             "document_number": "invoice_number",
