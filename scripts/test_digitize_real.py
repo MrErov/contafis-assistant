@@ -1,7 +1,8 @@
 """Prueba E2E del endpoint /digitize con una imagen real generada.
 
 Genera una factura sintética con PIL (datos FALSOS PERO CONOCIDOS):
-  RIF: J-99999999-9, TOTAL: 500.00, FECHA: 2026-11-11.
+  RIF: J-500257384 (impreso como en la máquina fiscal), TOTAL: 500.00,
+  FECHA: 2026-11-11.
 
 Llama al endpoint /digitize (o directamente al DigitizeService si no hay
 servidor levantado) y verifica que la respuesta coincida con los datos de la
@@ -31,7 +32,8 @@ from contafis_assistant.config import Settings
 # Generación de imagen de factura con datos falsos conocidos
 # ============================================================================
 
-RIF_ESPERADO = "J-99999999-9"
+RIF_ESPERADO = "J-50025738-4"
+RIF_IMPRESO = "J-500257384"  # como lo imprime la máquina fiscal (sin guion del check)
 TOTAL_ESPERADO = 500.00
 FECHA_ESPERADA = "2026-11-11"
 SUPLIENTE_ESPERADO = "Empresa Test S.A."
@@ -44,7 +46,7 @@ def generar_imagen_factura() -> str:
 
     lineas = [
         "FACTURA",
-        f"RIF: {RIF_ESPERADO}",
+        f"RIF: {RIF_IMPRESO}",
         f"FECHA: {FECHA_ESPERADA}",
         f"SUPLIENTE: {SUPLIENTE_ESPERADO}",
         "NUMERO: 001-001-00009999",

@@ -426,7 +426,7 @@ def mock_nim_vision_success(
     if extracted is None:
         extracted = {
             "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-9",
+            "supplier_rif": "J-12345678-4",
             "invoice_number": "001-001-00001234",
             "control_number": "ABC1234567890",
             "invoice_date": "2026-10-15",
@@ -514,7 +514,7 @@ def mock_nim_vision_nota_credito() -> callable:
     """Mock handler para nota de crédito."""
     extracted = {
         "supplier_name": "Distribuidora El Sol C.A.",
-        "supplier_rif": "J-12345678-9",
+        "supplier_rif": "J-12345678-4",
         "invoice_number": "001-001-00001235",
         "control_number": "DEF0987654321",
         "invoice_date": "2026-10-20",
@@ -537,7 +537,7 @@ def mock_nim_vision_nota_debito() -> callable:
     """Mock handler para nota de débito."""
     extracted = {
         "supplier_name": "Distribuidora El Sol C.A.",
-        "supplier_rif": "J-12345678-9",
+        "supplier_rif": "J-12345678-4",
         "invoice_number": "001-001-00001236",
         "control_number": "GHI5555555555",
         "invoice_date": "2026-10-25",
@@ -577,7 +577,7 @@ def mock_nim_vision_amount_mismatch() -> callable:
     """Mock handler con montos incoherentes."""
     extracted = {
         "supplier_name": "Test Proveedor",
-        "supplier_rif": "J-12345678-9",
+        "supplier_rif": "J-12345678-4",
         "invoice_number": "001",
         "control_number": "CTRL",
         "invoice_date": "2026-10-15",

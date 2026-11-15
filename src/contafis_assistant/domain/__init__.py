@@ -6,6 +6,7 @@ from contafis_assistant.domain.digitize import (
     ExtractedInvoice,
     ExtractedLine,
     DigitizeWarning,
+    normalize_rif,
     validate_rif,
     validate_amounts,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "ExtractedInvoice",
     "ExtractedLine",
     "DigitizeWarning",
+    "normalize_rif",
     "validate_rif",
     "validate_amounts",
 ]

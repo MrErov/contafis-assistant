@@ -79,6 +79,46 @@ def normalize_currency(value: object) -> object:
     return value.strip().upper()
 
 
+# Valor de cada letra del RIF para el módulo 11 (SENIAT):
+# V=1, E=2, J=3, P=4, G=5.
+_RIF_TIPO_VALUES: dict[str, int] = {"V": 1, "E": 2, "J": 3, "P": 4, "G": 5}
+_RIF_PESOS: tuple[int, ...] = (4, 3, 2, 7, 6, 5, 4, 3, 2)
+
+
+def normalize_rif(rif: object) -> str | None:
+    """Canonicaliza un RIF venezolano a la forma ``J-12345678-9``.
+
+    Las máquinas fiscales imprimen el RIF sin el guion del dígito de control
+    (``J-500257384``) o incluso sin guiones (``J500257384``), y el LLM lo
+    transcribe tal cual. Sin canonicalizar, el validador módulo 11 rechaza
+    recibos perfectamente válidos.
+
+    Returns:
+        El RIF canónico, o ``None`` si el valor no tiene forma de RIF.
+    """
+    if not isinstance(rif, str):
+        return None
+
+    compact = re.sub(r"[^0-9A-Za-z]", "", rif).upper()
+    if len(compact) < 9:
+        return None
+
+    tipo, resto = compact[0], compact[1:]
+    if tipo not in _RIF_TIPO_VALUES or not resto.isdigit():
+        return None
+
+    if len(resto) == 9:
+        # J-500257384: los 8 primeros dígitos son la base y el 9.º el control.
+        base, digito = resto[:8], resto[8]
+    elif len(resto) == 10:
+        # J-999999999-9: dígito extra en el medio (error típico de OCR/NIM).
+        base, digito = resto[:8], resto[9]
+    else:
+        return None
+
+    return f"{tipo}-{base}-{digito}"
+
+
 class ExtractedInvoice(BaseModel):
     """Factura extraída estructurada."""
     
@@ -98,6 +138,13 @@ class ExtractedInvoice(BaseModel):
     lines: list[ExtractedLine] = Field(default_factory=list, description="Líneas de detalle")
     credit_note_ref: str | None = Field(default=None, description="Ref factura original (nota crédito)")
     debit_note_ref: str | None = Field(default=None, description="Ref factura original (nota débito)")
+
+    @field_validator("supplier_rif", mode="before")
+    @classmethod
+    def _normalize_rif_value(cls, value: object) -> object:
+        """Canonicaliza el RIF impreso (J-500257384) a J-50025738-4."""
+        canonical = normalize_rif(value)
+        return canonical if canonical is not None else value
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -189,47 +236,35 @@ class DigitizeBatchResponse(BaseModel):
 
 def validate_rif(rif: str) -> tuple[bool, str | None]:
     """Valida RIF venezolano con algoritmo módulo 11.
-    
+
+    Acepta el RIF en cualquier formato impreso (``J-500257384``,
+    ``J500257384``) y lo valida contra la forma canónica ``J-12345678-9``.
+
     Args:
-        rif: RIF en formato J-12345678-9, V-12345678-9, etc.
-        
+        rif: RIF en formato J-12345678-9, J-500257384, etc.
+
     Returns:
         (True, None) si válido, (False, "mensaje de error") si inválido.
     """
     if not rif or not isinstance(rif, str):
         return False, "RIF vacío o no es string"
-    
-    rif_upper = rif.upper().strip()
-    pattern = r'^[JVEGP]-\d{8}-\d$'
-    if not re.match(pattern, rif_upper):
+
+    canonico = normalize_rif(rif)
+    if canonico is None:
         return False, "Formato RIF inválido (esperado J-12345678-9)"
-    
-    try:
-        tipo, base, digito = rif_upper.split('-')
-    except ValueError:
-        return False, "Formato RIF inválido (esperado 3 partes separadas por -)"
-    
-    tipo_map = {'J': 1, 'V': 2, 'E': 3, 'G': 4, 'P': 5}
-    tipo_val = tipo_map.get(tipo)
-    if tipo_val is None:
-        return False, f"Tipo de RIF '{tipo}' no soportado"
-    
-    # 9 pesos para 8 dígitos de base + 1 dígito de tipo
-    pesos = [4, 3, 2, 7, 6, 5, 4, 3, 2]
+
+    tipo, base, digito = canonico.split("-")
+    tipo_val = _RIF_TIPO_VALUES[tipo]
+
     digitos = [tipo_val] + [int(d) for d in base]
-    
-    if len(digitos) != len(pesos):
-        return False, "Longitud de RIF base inválida"
-    
-    suma = sum(d * p for d, p in zip(digitos, pesos))
+    suma = sum(d * p for d, p in zip(digitos, _RIF_PESOS))
     resto = suma % 11
     digito_calculado = 11 - resto
-    
-    if digito_calculado == 10:
+
+    # Resto 1 → 10 y resto 0 → 11: ambos se representan como 0 en el RIF.
+    if digito_calculado >= 10:
         digito_calculado = 0
-    elif digito_calculado == 11:
-        digito_calculado = 1
-    
+
     if digito_calculado != int(digito):
         return False, f"Dígito de control inválido (esperado {digito_calculado}, recibido {digito})"
     
@@ -313,6 +348,7 @@ __all__ = [
     "ExtractedInvoice",
     "ExtractedLine",
     "DigitizeWarning",
+    "normalize_rif",
     "validate_rif",
     "validate_amounts",
     "add_rif_warning",

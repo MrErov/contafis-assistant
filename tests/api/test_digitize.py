@@ -182,7 +182,7 @@ def test_digitize_factura_z_success(make_settings, monkeypatch):
         "confidence": 0.92,
         "extracted": {
             "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-1",  # válido
+            "supplier_rif": "J-12345678-4",  # válido
             "invoice_number": "001-001-00001234",
             "control_number": "ABC1234567890",
             "invoice_date": "2026-10-15",
@@ -221,7 +221,7 @@ def test_digitize_factura_z_success(make_settings, monkeypatch):
     assert data["document_type"] == "factura_z"
     assert data["confidence"] == 0.92
     assert data["extracted"]["supplier_name"] == "Distribuidora El Sol C.A."
-    assert data["extracted"]["supplier_rif"] == "J-12345678-1"
+    assert data["extracted"]["supplier_rif"] == "J-12345678-4"
     assert data["extracted"]["currency"] == "USD"
     assert data["extracted"]["subtotal"] == 100.00
     assert data["extracted"]["iva_amount"] == 16.00
@@ -242,7 +242,7 @@ def test_digitize_nota_credito_success(make_settings, monkeypatch):
         "confidence": 0.90,
         "extracted": {
             "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-1",
+            "supplier_rif": "J-12345678-4",
             "invoice_number": "001-001-00001235",
             "control_number": "DEF0987654321",
             "invoice_date": "2026-10-20",
@@ -297,7 +297,7 @@ def test_digitize_nota_debito_success(make_settings, monkeypatch):
         "confidence": 0.88,
         "extracted": {
             "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-1",
+            "supplier_rif": "J-12345678-4",
             "invoice_number": "001-001-00001236",
             "control_number": "GHI5555555555",
             "invoice_date": "2026-10-25",
@@ -450,7 +450,7 @@ def test_digitize_amount_mismatch_warning(make_settings, monkeypatch):
         "confidence": 0.90,
         "extracted": {
             "supplier_name": "Test Proveedor",
-            "supplier_rif": "J-12345678-1",
+            "supplier_rif": "J-12345678-4",
             "invoice_number": "001",
             "control_number": "CTRL",
             "invoice_date": "2026-10-15",
@@ -637,7 +637,7 @@ def test_digitize_auto_detect_type(make_settings, monkeypatch):
         "document_type": "factura_z",
         "confidence": 0.92,
         "extracted": {
-            "supplier_name": "Test", "supplier_rif": "J-12345678-1",
+            "supplier_name": "Test", "supplier_rif": "J-12345678-4",
             "currency": "USD", "subtotal": 100.00, "iva_amount": 16.00,
             "igtf_amount": 3.00, "total": 119.00, "lines": []
         }
@@ -668,7 +668,7 @@ def test_digitize_auto_detect_type(make_settings, monkeypatch):
         "document_type": "nota_credito",
         "confidence": 0.90,
         "extracted": {
-            "supplier_name": "Test", "supplier_rif": "J-12345678-1",
+            "supplier_name": "Test", "supplier_rif": "J-12345678-4",
             "currency": "USD", "subtotal": -50.00, "iva_amount": -8.00,
             "total": -58.00, "lines": [], "credit_note_ref": "001"
         }

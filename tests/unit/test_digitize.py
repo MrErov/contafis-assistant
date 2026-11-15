@@ -18,6 +18,7 @@ from contafis_assistant.domain.digitize import (
     ExtractedInvoice,
     ExtractedLine,
     DigitizeWarning,
+    normalize_rif,
     validate_rif,
     validate_amounts,
 )
@@ -43,42 +44,105 @@ def make_fake_invoice_base64(document_type: str = "factura_z") -> str:
 # ============================================================================
 
 def test_validate_rif_valid_j():
-    """RIF J-12345678-1 válido → (True, None)."""
-    ok, msg = validate_rif("J-12345678-1")
+    """RIF J-12345678-4 válido → (True, None)."""
+    ok, msg = validate_rif("J-12345678-4")
     assert ok is True
     assert msg is None
 
 
 def test_validate_rif_valid_v():
-    """RIF V-12345678-8 válido → (True, None)."""
-    ok, msg = validate_rif("V-12345678-8")
+    """RIF V-12345678-1 válido → (True, None)."""
+    ok, msg = validate_rif("V-12345678-1")
     assert ok is True
     assert msg is None
 
 
 def test_validate_rif_valid_e():
-    """RIF E-12345678-4 válido → (True, None)."""
-    ok, msg = validate_rif("E-12345678-4")
+    """RIF E-12345678-8 válido → (True, None)."""
+    ok, msg = validate_rif("E-12345678-8")
     assert ok is True
     assert msg is None
 
 
 def test_validate_rif_valid_g():
-    """RIF G-12345678-1 válido → (True, None)."""
-    ok, msg = validate_rif("G-12345678-1")
+    """RIF G-12345678-7 válido → (True, None)."""
+    ok, msg = validate_rif("G-12345678-7")
     assert ok is True
     assert msg is None
 
 
+def test_validate_rif_valid_p():
+    """RIF P-12345678-0 válido (resto 0 → dígito 0) → (True, None)."""
+    ok, msg = validate_rif("P-12345678-0")
+    assert ok is True
+    assert msg is None
+
+
+@pytest.mark.parametrize(
+    "rif",
+    [
+        "J-500257384",  # SEMIAT / MI SUPER C.A. (impreso sin guion del check)
+        "J-50025738-4",  # misma factura, forma canónica
+        "J506430070",  # SWEET SHOP & BAKERY C.A.
+        "J-311096590",  # COMERCIALIZADORA SANBELL, C.A.
+        "E-844189934",  # JIANYA WU / SUPER TIENDA 18 WU
+    ],
+)
+def test_validate_rif_validos_recibos_reales(rif):
+    """RIF de recibos fiscales reales → válidos en cualquier formato impreso."""
+    ok, msg = validate_rif(rif)
+    assert ok is True, msg
+    assert msg is None
+
+
+@pytest.mark.parametrize(
+    ("rif", "canonico"),
+    [
+        ("J-500257384", "J-50025738-4"),
+        ("J500257384", "J-50025738-4"),
+        ("J-50025738-4", "J-50025738-4"),
+        ("j.50025738.4", "J-50025738-4"),
+        ("J 500257384", "J-50025738-4"),
+        ("J-506430070", "J-50643007-0"),
+        ("E-844189934", "E-84418993-4"),
+        ("J-999999999-9", "J-99999999-9"),  # dígito extra en el medio (OCR)
+    ],
+)
+def test_normalize_rif(rif, canonico):
+    """El RIF se canonicaliza a J-12345678-9 antes de validar/guardar."""
+    assert normalize_rif(rif) == canonico
+
+
+def test_normalize_rif_no_canonicalizable():
+    """Un valor sin letra o sin dígitos no se puede canonicalizar."""
+    assert normalize_rif(None) is None
+    assert normalize_rif("") is None
+    assert normalize_rif("123456789") is None
+    assert normalize_rif("X-50025738-4") is None
+
+
+def test_extracted_invoice_normaliza_rif():
+    """ExtractedInvoice guarda el RIF en forma canónica."""
+    invoice = ExtractedInvoice(supplier_rif="J-500257384")
+    assert invoice.supplier_rif == "J-50025738-4"
+
+
 def test_validate_rif_invalid_checksum():
     """RIF con checksum incorrecto → (False, mensaje)."""
-    ok, msg = validate_rif("J-12345678-0")  # checksum wrong (válido es 1)
+    ok, msg = validate_rif("J-12345678-0")  # checksum wrong (válido es 4)
     assert ok is False
     assert "Dígito de control inválido" in msg
 
 
+def test_validate_rif_mensaje_esperado_real():
+    """El mensaje reporta el dígito correcto (4) para el recibo real."""
+    ok, msg = validate_rif("J-50025738-1")
+    assert ok is False
+    assert "esperado 4, recibido 1" in msg
+
+
 def test_validate_rif_invalid_format_no_dashes():
-    """RIF sin guiones → (False, mensaje)."""
+    """RIF sin letra ni guiones → (False, mensaje)."""
     ok, msg = validate_rif("123456789")
     assert ok is False
     assert "Formato RIF inválido" in msg
@@ -99,7 +163,7 @@ def test_validate_rif_invalid_base_not_numeric():
 
 def test_validate_rif_case_insensitive():
     """RIF en minúsculas → válido."""
-    ok, msg = validate_rif("j-12345678-1")
+    ok, msg = validate_rif("j-12345678-4")
     assert ok is True
 
 
@@ -460,13 +524,13 @@ def test_digitize_service_integration_mock(monkeypatch):
         DIGITIZE_MAX_IMAGE_MB=5,
     )
     
-    # Mock ChatOpenAI - usar RIF válido J-12345678-1
+    # Mock ChatOpenAI - usar RIF válido J-12345678-4
     mock_response_content = json.dumps({
         "document_type": "factura_z",
         "confidence": 0.92,
         "extracted": {
             "supplier_name": "Distribuidora El Sol C.A.",
-            "supplier_rif": "J-12345678-1",  # válido
+            "supplier_rif": "J-12345678-4",  # válido
             "invoice_number": "001-001-00001234",
             "control_number": "ABC1234567890",
             "invoice_date": "2026-10-15",
@@ -506,13 +570,68 @@ def test_digitize_service_integration_mock(monkeypatch):
     
     assert response.document_type == "factura_z"
     assert response.confidence == 0.92
-    assert response.extracted.supplier_rif == "J-12345678-1"
+    assert response.extracted.supplier_rif == "J-12345678-4"
     # RIF válido → no debe haber warning invalid_rif
     rif_warnings = [w for w in response.warnings if w.code == "invalid_rif"]
     assert len(rif_warnings) == 0
     # Montos coherentes → no warning amount_mismatch
     amount_warnings = [w for w in response.warnings if w.code == "amount_mismatch"]
     assert len(amount_warnings) == 0
+
+
+def test_digitize_service_normaliza_rif_impreso(monkeypatch):
+    """NIM transcribe el RIF como está impreso (J-500257384) → se canonicaliza."""
+    from contafis_assistant.api.digitize import DigitizeService
+    from contafis_assistant.config import Settings
+
+    settings = Settings(
+        ODOO_URL="http://localhost:8069",
+        ODOO_DB="contea",
+        ODOO_API_KEY="test",
+        OPENAI_API_KEY="test",
+        LLM_MODEL="llama-3.2-90b-vision-instruct",
+        EMBEDDING_MODEL="text-embedding-3-small",
+        CHROMA_PATH="/tmp/chroma",
+        DIGITIZE_TIMEOUT_SECONDS=30.0,
+        DIGITIZE_MAX_IMAGE_MB=5,
+    )
+
+    mock_response_content = json.dumps({
+        "document_type": "factura_z",
+        "confidence": 0.9,
+        "extracted": {
+            "supplier_name": "MI SUPER, C.A",
+            "supplier_rif": "J-500257384",  # como lo imprime la máquina fiscal
+            "invoice_number": "00004089",
+            "invoice_date": "2026-10-12",
+            "currency": "VES",
+            "total": 9137.24,
+            "lines": [],
+        }
+    })
+
+    class MockChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def invoke(self, messages):
+            class MockResponse:
+                content = mock_response_content
+            return MockResponse()
+
+    monkeypatch.setattr("contafis_assistant.api.digitize.ChatOpenAI", MockChatOpenAI)
+
+    service = DigitizeService(settings)
+    req = DigitizeRequest(
+        image_base64=make_fake_invoice_base64(),
+        filename="recibo.jpeg",
+        document_type="factura_z",
+    )
+
+    response = service.digitize(req)
+
+    assert response.extracted.supplier_rif == "J-50025738-4"
+    assert not [w for w in response.warnings if w.code == "invalid_rif"]
 
 
 def test_digitize_service_invalid_rif_warning(monkeypatch):

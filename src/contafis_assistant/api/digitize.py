@@ -322,14 +322,7 @@ class DigitizeService:
             extracted["total"] = extracted.pop("total_amount")
         if "invoice_amount" in extracted and "subtotal" not in extracted:
             extracted["subtotal"] = extracted.pop("invoice_amount")
-        # NIM usa supplier_rif pero puede venir con un dígito extra (ej: J-999999999-9)
-        if "supplier_rif" in extracted:
-            rif = extracted["supplier_rif"]
-            if isinstance(rif, str) and rif.count("-") == 2:
-                parts = rif.split("-")
-                if len(parts[1]) == 9:  # 9 dígitos en lugar de 8
-                    # Quitar el dígito extra del medio (asumimos que es el check digit duplicado)
-                    extracted["supplier_rif"] = f"{parts[0]}-{parts[1][:8]}-{parts[2]}"
+        # El RIF se canonicaliza en ExtractedInvoice (normalize_rif).
 
         return {
             "document_type": normalized.get("document_type", "factura_z"),
@@ -348,7 +341,7 @@ class DigitizeService:
         for line_data in lines_data:
             if isinstance(line_data, dict):
                 lines.append(ExtractedLine(
-                    description=line_data.get("description", ""),
+                    description=line_data.get("description") or "",
                     quantity=float(line_data.get("quantity", 0) or 0),
                     unit_price=float(line_data.get("unit_price", 0) or 0),
                     total=float(line_data.get("total", 0) or 0),
