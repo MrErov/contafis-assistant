@@ -67,6 +67,25 @@ class ToolBudget:
         self.used += amount
 
 
+class _BorrowedTransport(httpx.BaseTransport):
+    """Envuelve un transporte compartido sin cerrarlo al cerrar el cliente.
+
+    ``httpx.Client.close`` cierra el transporte que recibió. El runtime
+    comparte un único ``HTTPTransport`` entre requests, así que el cliente por
+    request no es su dueño: sólo lo usa. El dueño real lo cierra al apagar el
+    runtime.
+    """
+
+    def __init__(self, transport: httpx.BaseTransport) -> None:
+        self._transport = transport
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self._transport.handle_request(request)
+
+    def close(self) -> None:
+        return None
+
+
 class OdooClient:
     """Ejecuta RPC ya validados contra ``POST /json/2/{model}/{method}``.
 
@@ -97,7 +116,12 @@ class OdooClient:
         self._allowed_company_ids = [int(value) for value in (allowed_company_ids or [])]
         self.uid = uid
         self._lock = threading.Lock()
-        self._http = httpx.Client(timeout=timeout, transport=transport)
+        self._http = httpx.Client(
+            timeout=timeout,
+            transport=(
+                _BorrowedTransport(transport) if transport is not None else None
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Configuración / ciclo de vida

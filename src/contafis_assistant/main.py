@@ -109,6 +109,7 @@ class ChatRuntime:
     ready: bool = False
     _startup_snapshot: ScopeSnapshot | None = None
     user_transport: Any | None = None
+    _owns_user_transport: bool = False
 
     def startup(self) -> None:
         if self.corpus is not None:
@@ -138,7 +139,10 @@ class ChatRuntime:
 
     def close(self) -> None:
         try:
-            for resource in (self.scope, self.corpus, self.odoo_client):
+            resources = [self.scope, self.corpus, self.odoo_client]
+            if self._owns_user_transport:
+                resources.append(self.user_transport)
+            for resource in resources:
                 close = getattr(resource, "close", None)
                 if callable(close):
                     try:
@@ -940,6 +944,7 @@ def build_runtime(
     # Transporte compartido por las sesiones de usuario: debe existir siempre,
     # porque ``get_user_context_from_session`` lo usa para validar el
     # ``session_id`` contra Odoo antes de construir el cliente por request.
+    owns_user_transport = user_transport is None
     if user_transport is None:
         user_transport = httpx.HTTPTransport()
     client = odoo_client
@@ -1005,6 +1010,7 @@ def build_runtime(
         clock=clock,
         tracer=tracer,
         user_transport=user_transport,
+        _owns_user_transport=owns_user_transport,
     )
 
 
@@ -1042,7 +1048,7 @@ def create_app(
     app.state.runtime = runtime
     app.state.runtime_factory = runtime_factory or build_runtime
 
-    guard = ApiKeyGuard(resolved.api_shared_secret)
+    guard = ApiKeyGuard(resolved.api_shared_secret, app_env=resolved.app_env)
 
     @app.middleware("http")
     async def _api_key_middleware(request: Request, call_next):

@@ -144,7 +144,7 @@ class Settings(BaseSettings):
             print(
                 f"WARNING: API_SHARED_SECRET no configurado; "
                 f"app_env={self.app_env}. "
-                f"El servicio continuará pero no estará protegido por API key.",
+                f"La API rechazará todas las peticiones (fail-closed).",
                 file=sys.stdout,
             )
 

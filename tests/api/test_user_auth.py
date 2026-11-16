@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from contafis_assistant.config import Settings
 from contafis_assistant.main import create_app
+from contafis_assistant.odoo.allowlist import RpcCall
+from contafis_assistant.odoo.client import OdooClient
 from contafis_assistant.odoo.errors import OdooAuthError, OdooTransientError
 
 
@@ -330,8 +335,8 @@ def test_chat_with_valid_token_uses_bearer_token_in_requests(make_settings):
     assert first_request.headers["X-Odoo-Database"] == settings.odoo_db
 
 
-def test_odoo_client_closes_after_request(make_settings):
-    """El cliente Odoo se cierra al terminar el request (transport fake cuenta close)."""
+def test_shared_user_transport_not_closed_after_request(make_settings):
+    """El cliente Odoo por request no cierra el transporte compartido (AL-02)."""
     settings = make_settings()
     user_token = "user-token-close-test"
 
@@ -356,8 +361,75 @@ def test_odoo_client_closes_after_request(make_settings):
         )
 
     assert response.status_code == 200
-    # Verificar que close() se llamó en el transporte
-    assert captured_transport.close_count >= 1
+    # El transporte pertenece al runtime: el cliente por request no debe cerrarlo.
+    assert captured_transport.close_count == 0
+
+
+class _SharedTransportProbe:
+    """Transporte compartido thread-safe que falla si se usa después de close()."""
+
+    def __init__(self, barrier_parties: int = 4) -> None:
+        self._lock = threading.Lock()
+        self._closed = False
+        self._barrier = threading.Barrier(barrier_parties)
+        self._request_count = 0
+        self.close_count = 0
+
+    @property
+    def request_count(self) -> int:
+        with self._lock:
+            return self._request_count
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        with self._lock:
+            if self._closed:
+                raise httpx.TransportError("el transporte compartido ya fue cerrado")
+            self._request_count += 1
+            first_wave = self._request_count <= self._barrier.parties
+
+        if first_wave:
+            # Fuerza a que la primera tanda de requests coincida en vuelo.
+            try:
+                self._barrier.wait(timeout=5)
+            except threading.BrokenBarrierError:
+                raise httpx.TransportError(
+                    "el transporte compartido se cerró durante la tanda"
+                ) from None
+
+        return httpx.Response(200, json={"uid": 7})
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            self.close_count += 1
+
+
+def _execute_with_shared_transport(transport: _SharedTransportProbe) -> dict:
+    client = OdooClient(
+        url="http://odoo.test",
+        database="test-db",
+        api_key="token",
+        transport=transport,
+    )
+    try:
+        return client.execute(RpcCall(model="res.users", method="context_get"))
+    finally:
+        client.close()
+
+
+def test_shared_transport_survives_concurrent_requests():
+    """8 requests concurrentes sobre un transporte compartido: ninguno falla ni lo cierra."""
+    shared = _SharedTransportProbe()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [
+            pool.submit(_execute_with_shared_transport, shared) for _ in range(8)
+        ]
+        results = [future.result(timeout=10) for future in futures]
+
+    assert results == [{"uid": 7}] * 8
+    assert shared.request_count == 8
+    assert shared.close_count == 0
 
 
 def test_invalid_x_api_key_returns_401_before_user_token(make_settings):
