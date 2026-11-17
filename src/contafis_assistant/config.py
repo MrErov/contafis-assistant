@@ -92,7 +92,6 @@ class Settings(BaseSettings):
     memory_max_turns: int = 20
     memory_max_threads: int = 500
     scope_check_ttl_seconds: int = 300
-    session_max_age_hours: int = Field(default=24, ge=1)
 
     # Digitize (Spec 006)
     # NIM vision (llama-3.2-90b-vision-instruct) tarda 30-65s con few-shots +

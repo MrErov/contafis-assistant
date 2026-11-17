@@ -11,9 +11,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.api.conftest import make_fake_invoice_image
-from tests.api.test_digitize import make_app_with_odoo_transport
-
-SESSION_HEADER = {"X-Odoo-Session": "valid-session"}
+from tests.api.test_digitize import (
+    API_KEY_HEADER,
+    SHARED_SECRET,
+    auth_headers,
+    make_app_with_odoo_transport,
+)
 
 # Delay del lote: se reduce a 0 en los tests de flujo para no dormir de verdad.
 ROUTES_MODULE = "contafis_assistant.api.routes"
@@ -83,12 +86,12 @@ def _batch_payload(count: int) -> dict:
 
 
 def test_batch_processes_every_image_in_order(make_settings, monkeypatch):
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     client = _client(settings, monkeypatch, _invoice_json())
 
     with client:
         response = client.post(
-            "/digitize_batch", json=_batch_payload(3), headers=SESSION_HEADER
+            "/digitize_batch", json=_batch_payload(3), headers=auth_headers()
         )
 
     assert response.status_code == 200
@@ -111,7 +114,7 @@ def test_batch_processes_every_image_in_order(make_settings, monkeypatch):
 def test_batch_waits_between_images_but_not_after_the_last(make_settings, monkeypatch):
     import asyncio
 
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     client = _client(settings, monkeypatch, _invoice_json())
 
     slept: list[float] = []
@@ -124,7 +127,7 @@ def test_batch_waits_between_images_but_not_after_the_last(make_settings, monkey
 
     with client:
         response = client.post(
-            "/digitize_batch", json=_batch_payload(3), headers=SESSION_HEADER
+            "/digitize_batch", json=_batch_payload(3), headers=auth_headers()
         )
 
     assert response.status_code == 200
@@ -133,7 +136,7 @@ def test_batch_waits_between_images_but_not_after_the_last(make_settings, monkey
 
 def test_batch_isolates_a_single_failure(make_settings, monkeypatch):
     """Un fallo puntual no invalida el resto del lote."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
 
     # Segundo ítem: NIM responde con JSON ilegible -> error aislado.
     calls = {"n": 0}
@@ -156,7 +159,7 @@ def test_batch_isolates_a_single_failure(make_settings, monkeypatch):
 
     with client:
         response = client.post(
-            "/digitize_batch", json=_batch_payload(3), headers=SESSION_HEADER
+            "/digitize_batch", json=_batch_payload(3), headers=auth_headers()
         )
 
     assert response.status_code == 200
@@ -175,27 +178,27 @@ def test_batch_isolates_a_single_failure(make_settings, monkeypatch):
 
 
 def test_batch_rejects_empty_list(make_settings, monkeypatch):
-    client = _client(make_settings(), monkeypatch, _invoice_json())
+    client = _client(make_settings(API_SHARED_SECRET=SHARED_SECRET), monkeypatch, _invoice_json())
 
     with client:
-        response = client.post("/digitize_batch", json={"images": []}, headers=SESSION_HEADER)
+        response = client.post("/digitize_batch", json={"images": []}, headers=auth_headers())
 
     assert response.status_code == 422
 
 
 def test_batch_rejects_more_than_twenty_images(make_settings, monkeypatch):
-    client = _client(make_settings(), monkeypatch, _invoice_json())
+    client = _client(make_settings(API_SHARED_SECRET=SHARED_SECRET), monkeypatch, _invoice_json())
 
     with client:
         response = client.post(
-            "/digitize_batch", json=_batch_payload(21), headers=SESSION_HEADER
+            "/digitize_batch", json=_batch_payload(21), headers=auth_headers()
         )
 
     assert response.status_code == 422
 
 
 def test_batch_rejects_invalid_base64(make_settings, monkeypatch):
-    client = _client(make_settings(), monkeypatch, _invoice_json())
+    client = _client(make_settings(API_SHARED_SECRET=SHARED_SECRET), monkeypatch, _invoice_json())
     payload = {
         "images": [
             {
@@ -206,15 +209,20 @@ def test_batch_rejects_invalid_base64(make_settings, monkeypatch):
     }
 
     with client:
-        response = client.post("/digitize_batch", json=payload, headers=SESSION_HEADER)
+        response = client.post("/digitize_batch", json=payload, headers=auth_headers())
 
     assert response.status_code == 422
 
 
 def test_batch_requires_authentication(make_settings, monkeypatch):
-    client = _client(make_settings(), monkeypatch, _invoice_json())
+    client = _client(make_settings(API_SHARED_SECRET=SHARED_SECRET), monkeypatch, _invoice_json())
 
     with client:
-        response = client.post("/digitize_batch", json=_batch_payload(1))
+        response = client.post(
+            "/digitize_batch", json=_batch_payload(1), headers=API_KEY_HEADER
+        )
 
     assert response.status_code == 401
+    assert response.json()["detail"] == (
+        "Falta autenticación (X-ContaFis-Token o X-User-Token)."
+    )

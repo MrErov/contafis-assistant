@@ -5,14 +5,14 @@ Superficie HTTP del asistente (FastAPI): chat, alcance, salud, liveness y digita
 
 ## Responsibilities
 - Exponer `/chat`, `/scope`, `/health`, `/livez` y `/digitize`.
-- Autenticar por `X-Odoo-Session` o token legacy y construir el contexto de usuario.
+- Autenticar por `X-ContaFis-Token` (token efímero firmado) o token legacy y construir el contexto de usuario.
 - Validar la forma y los límites del request antes de ejecutar el grafo.
 - Traducir fallos a respuestas HTTP seguras (400/401/503) y contratos `ChatResponse`.
 - Ejecutar trabajo síncrono (grafo, digitize) en threadpool para no bloquear el event loop.
 
 ## Public interface
 - `router` — `APIRouter` con los cinco endpoints.
-- `UserContext`, `get_user_context_from_session` — autenticación y alcance por request.
+- `UserContext`, `get_user_context_from_token` — autenticación y alcance por request.
 - `ApiKeyGuard`, `verify_api_key`, `API_KEY_HEADER` — autenticación de servicio.
 - `DigitizeService`, `get_digitize_service`, `NIMError`, `NIMTimeoutError`, `NIMParsingError`.
 - `ServiceUnavailable`, `invalid_request_response`, `unavailable_payload`.

@@ -97,8 +97,8 @@ def classify_scope(
     """Clasificación pura de §8.3; sin I/O.
 
     ``attestation_required`` distingue el modo token (API key de servicio,
-    que sí debe estar atestada como read-only) del modo sesión (el usuario
-    se autentica con su propia sesión web y sus ACLs, sin API key).
+    que sí debe estar atestada como read-only) del modo legacy (el usuario
+    se autentica con su propia API key personal).
     """
 
     user_ids = _normalize_ids(user_company_ids)
@@ -225,28 +225,36 @@ class ScopeService:
             if not isinstance(context, dict):
                 raise OdooError("context_get devolvió un valor inesperado")
 
-            uid = context.get("uid")
+            # El token firmado preselecciona uid y compañía en el cliente; el
+            # ``context_get`` devuelve el contexto del usuario de servicio, así
+            # que los claims del token siempre tienen prioridad.
+            uid = getattr(self._client, "uid", None)
             if uid is None:
-                uid = getattr(self._client, "uid", None)
+                uid = context.get("uid")
             if uid is None:
                 raise OdooError("no se pudo determinar el uid del usuario")
 
             self._client.uid = uid
 
-            allowed = context.get("allowed_company_ids")
-            if allowed is None:
-                rows = self._client.execute(
-                    RpcCall(
-                        model="res.users",
-                        method="read",
-                        ids=[uid],
-                        fields=["company_ids"],
+            preselected = getattr(self._client, "allowed_company_ids", None)
+            if preselected:
+                allowed_ids = _normalize_ids(preselected)
+            else:
+                allowed = context.get("allowed_company_ids")
+                if allowed is None:
+                    rows = self._client.execute(
+                        RpcCall(
+                            model="res.users",
+                            method="read",
+                            ids=[uid],
+                            fields=["company_ids"],
+                        )
                     )
-                )
-                allowed = rows[0].get("company_ids", []) if rows else []
+                    allowed = rows[0].get("company_ids", []) if rows else []
 
-            allowed_ids = _normalize_ids(allowed or [])
+                allowed_ids = _normalize_ids(allowed or [])
             self._client.set_allowed_company_ids(allowed_ids)
+            preselect_scope = bool(preselected)
 
             is_system = bool(
                 self._client.execute(
@@ -279,11 +287,16 @@ class ScopeService:
                 )
             )
 
+            company_domain = [("active", "=", True)]
+            if preselect_scope:
+                # Nunca listar compañías fuera del alcance del token.
+                company_domain.append(("id", "in", allowed_ids))
+
             companies = self._client.execute(
                 RpcCall(
                     model="res.company",
                     method="search_read",
-                    domain=[("active", "=", True)],
+                    domain=company_domain,
                     fields=["id", "name"],
                 )
             )

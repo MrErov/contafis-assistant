@@ -941,9 +941,9 @@ def build_runtime(
     if tracing_enabled(settings):
         os.environ.update(langsmith_env(settings))
     tracer = tracer if tracer is not None else tracer_from_settings(settings)
-    # Transporte compartido por las sesiones de usuario: debe existir siempre,
-    # porque ``get_user_context_from_session`` lo usa para validar el
-    # ``session_id`` contra Odoo antes de construir el cliente por request.
+    # Transporte compartido por los clientes por request: debe existir siempre,
+    # porque ``get_user_context_from_token`` lo usa para consultar Odoo
+    # server-to-server con la API key de servicio.
     owns_user_transport = user_transport is None
     if user_transport is None:
         user_transport = httpx.HTTPTransport()

@@ -156,7 +156,7 @@ def _make_client_with_transport(settings: Settings, transport: MockOdooTransport
 # ============================================================================
 
 def test_chat_without_user_token_returns_401(make_settings):
-    """POST /chat sin header X-User-Token ni X-Odoo-Session → 401 con detail unificado."""
+    """POST /chat sin X-ContaFis-Token ni X-User-Token → 401 con detail unificado."""
     settings = make_settings()
     from tests.api.conftest import make_runtime
     runtime, *_ = make_runtime(settings)
@@ -167,7 +167,7 @@ def test_chat_without_user_token_returns_401(make_settings):
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Falta autenticación (X-Odoo-Session o X-User-Token)."
+    assert body["detail"] == "Falta autenticación (X-ContaFis-Token o X-User-Token)."
 
 
 def test_chat_with_empty_user_token_returns_401(make_settings):
@@ -186,7 +186,7 @@ def test_chat_with_empty_user_token_returns_401(make_settings):
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Falta autenticación (X-Odoo-Session o X-User-Token)."
+    assert body["detail"] == "Falta autenticación (X-ContaFis-Token o X-User-Token)."
 
 
 def test_chat_with_invalid_user_token_returns_401(make_settings):

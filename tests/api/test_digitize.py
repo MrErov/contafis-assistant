@@ -6,11 +6,15 @@ montos incoherentes, errores de validación, auth, timeouts.
 
 from __future__ import annotations
 
+import base64
 import json
+import time
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from contafis_assistant.api.signed_token import TOKEN_TTL_SECONDS, sign_token
 from contafis_assistant.config import Settings
 from contafis_assistant.main import create_app
 from contafis_assistant.domain.digitize import DigitizeRequest
@@ -28,41 +32,29 @@ from tests.api.conftest import (
 
 
 # ============================================================================
-# Mock helpers para session validation
+# Helpers de autenticación firmada (P0-04)
 # ============================================================================
 
-def make_session_info_response(
+SHARED_SECRET = "test-shared-secret"
+API_KEY_HEADER = {"X-API-Key": SHARED_SECRET}
+
+
+def auth_headers(
+    *,
     uid: int = 7,
     company_id: int = 1,
-    allowed_company_ids: list[int] | None = None,
-    last_activity: str | None = None,
-) -> httpx.Response:
-    """Construye respuesta exitosa de /web/session/get_session_info."""
-    from datetime import datetime, timezone
-    if allowed_company_ids is None:
-        allowed_company_ids = [1, 2]
-    if last_activity is None:
-        last_activity = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-    return httpx.Response(200, json={
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "uid": uid,
-            "is_system": False,
-            "is_admin": False,
-            "user_context": {
-                "lang": "es_VE",
-                "tz": "America/Caracas",
-                "uid": uid,
-                "allowed_company_ids": allowed_company_ids,
-                "company_id": company_id,
-                "partner_id": 12
-            },
-            "session_id": "test-session-abc",
-            "last_activity": last_activity
-        }
-    })
+    now: float | None = None,
+    include_api_key: bool = True,
+) -> dict[str, str]:
+    """Firma un token fresco por request (el TTL es de 60 s)."""
+    headers = {
+        "X-ContaFis-Token": sign_token(
+            SHARED_SECRET, uid=uid, company_id=company_id, now=now
+        )
+    }
+    if include_api_key:
+        headers.update(API_KEY_HEADER)
+    return headers
 
 
 # ============================================================================
@@ -114,26 +106,26 @@ def make_app_with_odoo_transport(settings: Settings):
         scope_snapshot=snapshot,
     )
 
-    # Transporte para Odoo (session validation + scope_check)
+    # Transporte Odoo JSON/2 para el flujo del token firmado: la API key de
+    # servicio hace todas las consultas (nunca se reenvía una cookie de sesión).
     class OdooTransport:
         def handle_request(self, request: httpx.Request) -> httpx.Response:
-            url = str(request.url)
-            
-            # Session validation endpoint
-            if "/web/session/get_session_info" in url:
-                return make_session_info_response()
-            
-            # Odoo scope_check endpoints
-            if "context_get" in url:
-                return httpx.Response(200, json={"uid": 7, "allowed_company_ids": [1, 2]})
-            if "has_group" in url:
-                if "group_system" in url or "group_erp_manager" in url:
-                    return httpx.Response(200, json=False)
-                if "group_user" in url:
-                    return httpx.Response(200, json=True)
-            if "res.company" in url and "search_read" in url:
-                return httpx.Response(200, json=[{"id": 1, "name": "Test Company"}])
-            
+            path = request.url.path
+
+            if path == "/json/2/res.users/context_get":
+                return httpx.Response(
+                    200, json={"uid": 7, "allowed_company_ids": [1, 2]}
+                )
+            if path == "/json/2/res.users/has_group":
+                body = json.loads(request.content or b"{}")
+                return httpx.Response(
+                    200, json=body.get("group_ext_id") == "base.group_user"
+                )
+            if path == "/json/2/res.company/search_read":
+                return httpx.Response(
+                    200, json=[{"id": 1, "name": "Test Company"}]
+                )
+
             # Default
             return httpx.Response(200, json=[])
         
@@ -174,7 +166,7 @@ def make_app_with_odoo_transport(settings: Settings):
 
 def test_digitize_factura_z_success(make_settings, monkeypatch):
     """Factura Z legible → 200, estructura correcta, sin warnings críticos."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     # Mock ChatOpenAI para NIM vision
     mock_response = json.dumps({
@@ -213,7 +205,7 @@ def test_digitize_factura_z_success(make_settings, monkeypatch):
                 "filename": "factura_001.jpg",
                 "document_type": "factura_z",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -235,7 +227,7 @@ def test_digitize_factura_z_success(make_settings, monkeypatch):
 
 def test_digitize_nota_credito_success(make_settings, monkeypatch):
     """Nota de crédito legible → 200, montos negativos, credit_note_ref poblado."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "nota_credito",
@@ -273,7 +265,7 @@ def test_digitize_nota_credito_success(make_settings, monkeypatch):
                 "filename": "nota_credito_001.jpg",
                 "document_type": "nota_credito",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -290,7 +282,7 @@ def test_digitize_nota_credito_success(make_settings, monkeypatch):
 
 def test_digitize_nota_debito_success(make_settings, monkeypatch):
     """Nota de débito legible → 200, montos positivos, debit_note_ref poblado."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "nota_debito",
@@ -328,7 +320,7 @@ def test_digitize_nota_debito_success(make_settings, monkeypatch):
                 "filename": "nota_debito_001.jpg",
                 "document_type": "nota_debito",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -345,7 +337,7 @@ def test_digitize_nota_debito_success(make_settings, monkeypatch):
 
 def test_digitize_low_confidence(make_settings, monkeypatch):
     """Imagen borrosa → confidence < 0.5, warning low_confidence."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "factura_z",
@@ -383,7 +375,7 @@ def test_digitize_low_confidence(make_settings, monkeypatch):
                 "filename": "borrosa.jpg",
                 "document_type": "auto",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -397,7 +389,7 @@ def test_digitize_low_confidence(make_settings, monkeypatch):
 
 def test_digitize_invalid_rif_warning(make_settings, monkeypatch):
     """RIF extraído inválido → warning invalid_rif."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "factura_z",
@@ -429,7 +421,7 @@ def test_digitize_invalid_rif_warning(make_settings, monkeypatch):
                 "filename": "factura_rif_invalido.jpg",
                 "document_type": "factura_z",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -443,7 +435,7 @@ def test_digitize_invalid_rif_warning(make_settings, monkeypatch):
 
 def test_digitize_amount_mismatch_warning(make_settings, monkeypatch):
     """Montos incoherentes → warning amount_mismatch."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "factura_z",
@@ -476,7 +468,7 @@ def test_digitize_amount_mismatch_warning(make_settings, monkeypatch):
                 "filename": "factura_montos_malos.jpg",
                 "document_type": "factura_z",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -491,7 +483,7 @@ def test_digitize_amount_mismatch_warning(make_settings, monkeypatch):
 
 def test_digitize_without_auth(make_settings):
     """Sin headers de autenticación → 401."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     from tests.api.conftest import make_runtime
     runtime, *_ = make_runtime(settings)
     app = create_app(settings, runtime=runtime)
@@ -512,7 +504,7 @@ def test_digitize_without_auth(make_settings):
 
 def test_digitize_invalid_base64(make_settings, monkeypatch):
     """base64 corrupto → 400."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     mock_response = json.dumps({
         "document_type": "factura_z",
         "confidence": 0.92,
@@ -530,7 +522,7 @@ def test_digitize_invalid_base64(make_settings, monkeypatch):
                 "image_base64": "esto no es base64 válido!!!",
                 "filename": "factura_001.jpg",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 422  # FastAPI validation error
@@ -540,7 +532,7 @@ def test_digitize_invalid_base64(make_settings, monkeypatch):
 
 def test_digitize_invalid_extension(make_settings, monkeypatch):
     """Extensión .pdf → 422 (FastAPI validation)."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     mock_response = json.dumps({
         "document_type": "factura_z",
         "confidence": 0.92,
@@ -559,7 +551,7 @@ def test_digitize_invalid_extension(make_settings, monkeypatch):
                 "image_base64": img_b64,
                 "filename": "factura_001.pdf",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 422
@@ -567,7 +559,7 @@ def test_digitize_invalid_extension(make_settings, monkeypatch):
 
 def test_digitize_nim_timeout(make_settings, monkeypatch):
     """NIM timeout → 503."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     class MockChatOpenAI:
         def __init__(self, *args, **kwargs):
@@ -589,7 +581,7 @@ def test_digitize_nim_timeout(make_settings, monkeypatch):
                 "image_base64": img_b64,
                 "filename": "factura_001.jpg",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 503
@@ -598,7 +590,7 @@ def test_digitize_nim_timeout(make_settings, monkeypatch):
 
 def test_digitize_nim_invalid_json(make_settings, monkeypatch):
     """NIM devuelve JSON inválido → 503."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     class MockChatOpenAI:
         def __init__(self, *args, **kwargs):
@@ -622,7 +614,7 @@ def test_digitize_nim_invalid_json(make_settings, monkeypatch):
                 "image_base64": img_b64,
                 "filename": "factura_001.jpg",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 503
@@ -630,7 +622,7 @@ def test_digitize_nim_invalid_json(make_settings, monkeypatch):
 
 def test_digitize_auto_detect_type(make_settings, monkeypatch):
     """document_type=auto → detecta tipo correctamente."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     # Test factura_z
     mock_response_fz = json.dumps({
@@ -656,7 +648,7 @@ def test_digitize_auto_detect_type(make_settings, monkeypatch):
                 "filename": "factura_001.jpg",
                 "document_type": "auto",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 200
@@ -687,7 +679,7 @@ def test_digitize_auto_detect_type(make_settings, monkeypatch):
                 "filename": "nota_credito_001.jpg",
                 "document_type": "auto",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response2.status_code == 200
@@ -697,7 +689,7 @@ def test_digitize_auto_detect_type(make_settings, monkeypatch):
 
 def test_digitize_legacy_token_auth(make_settings, monkeypatch):
     """Autenticación legacy con X-User-Token funciona."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "factura_z",
@@ -717,15 +709,15 @@ def test_digitize_legacy_token_auth(make_settings, monkeypatch):
                 "image_base64": img_b64,
                 "filename": "factura_001.jpg",
             },
-            headers={"X-User-Token": "legacy-token-123"},
+            headers={"X-User-Token": "legacy-token-123", **API_KEY_HEADER},
         )
     
     assert response.status_code == 200
 
 
-def test_digitize_session_priority_over_token(make_settings, monkeypatch):
-    """X-Odoo-Session tiene prioridad sobre X-User-Token."""
-    settings = make_settings()
+def test_digitize_signed_token_priority_over_legacy(make_settings, monkeypatch):
+    """El token firmado tiene prioridad sobre X-User-Token."""
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     
     mock_response = json.dumps({
         "document_type": "factura_z",
@@ -746,7 +738,7 @@ def test_digitize_session_priority_over_token(make_settings, monkeypatch):
                 "filename": "factura_001.jpg",
             },
             headers={
-                "X-Odoo-Session": "session-priority",
+                **auth_headers(),
                 "X-User-Token": "should-be-ignored",
             },
         )
@@ -756,7 +748,7 @@ def test_digitize_session_priority_over_token(make_settings, monkeypatch):
 
 def test_digitize_missing_image_base64(make_settings, monkeypatch):
     """Request sin image_base64 → 422 (FastAPI validation error)."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     mock_response = json.dumps({
         "document_type": "factura_z",
         "confidence": 0.92,
@@ -773,7 +765,7 @@ def test_digitize_missing_image_base64(make_settings, monkeypatch):
             json={
                 "filename": "factura_001.jpg",
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 422
@@ -781,7 +773,7 @@ def test_digitize_missing_image_base64(make_settings, monkeypatch):
 
 def test_digitize_missing_filename(make_settings, monkeypatch):
     """Request sin filename → 422 (FastAPI validation error)."""
-    settings = make_settings()
+    settings = make_settings(API_SHARED_SECRET=SHARED_SECRET)
     mock_response = json.dumps({
         "document_type": "factura_z",
         "confidence": 0.92,
@@ -799,7 +791,7 @@ def test_digitize_missing_filename(make_settings, monkeypatch):
             json={
                 "image_base64": img_b64,
             },
-            headers={"X-Odoo-Session": "valid-session"},
+            headers=auth_headers(),
         )
     
     assert response.status_code == 422

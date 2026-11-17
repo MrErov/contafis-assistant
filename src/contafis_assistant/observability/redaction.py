@@ -28,7 +28,8 @@ _URL = re.compile(
 )
 _HEADER = re.compile(
     r"(?i)\b(?:authorization|proxy-authorization|x-api-key|api-key|x-auth-token"
-    r"|x-odoo-database|odoo-database|cookie|set-cookie|x-forwarded-for)\b"
+    r"|x-contafis-token|x-user-token|x-odoo-database|odoo-database|cookie"
+    r"|set-cookie|x-forwarded-for)\b"
     r"\s*:\s*[^\s,;]+(?:\s+[^\s,;]+)?"
 )
 _BEARER = re.compile(

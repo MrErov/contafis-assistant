@@ -1,4 +1,4 @@
-"""Endpoints `/chat`, `/scope`, `/health` y `/digitize` con autenticación por sesión."""
+"""Endpoints `/chat`, `/scope`, `/health` y `/digitize` con autenticación firmada."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from contafis_assistant.api.errors import (
     ServiceUnavailable,
     invalid_request_response,
 )
-from contafis_assistant.api.user_auth import UserContext, get_user_context_from_session
+from contafis_assistant.api.user_auth import UserContext, get_user_context_from_token
 from contafis_assistant.domain.contracts import ChatResponse, ScopeInfo
 from contafis_assistant.domain.digitize import (
     DigitizeBatchItemResult,
@@ -71,7 +71,7 @@ def _parse_json(raw: bytes) -> Any:
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
-    user_ctx: UserContext = Depends(get_user_context_from_session),
+    user_ctx: UserContext = Depends(get_user_context_from_token),
 ) -> ChatResponse:
     runtime = _runtime(request)
     raw_body = await request.body()
@@ -103,7 +103,7 @@ async def chat(
 
 
 @router.get("/scope", response_model=ScopeInfo)
-def scope(user_ctx: UserContext = Depends(get_user_context_from_session)) -> ScopeInfo:
+def scope(user_ctx: UserContext = Depends(get_user_context_from_token)) -> ScopeInfo:
     """Devuelve el alcance del usuario autenticado (compañías visibles, estado de scope)."""
     from contafis_assistant.domain.enums import ScopeState
 
@@ -146,11 +146,11 @@ def health(request: Request) -> JSONResponse:
 async def digitize(
     request: Request,
     digitize_request: DigitizeRequest,
-    user_ctx: UserContext = Depends(get_user_context_from_session),
+    user_ctx: UserContext = Depends(get_user_context_from_token),
 ) -> DigitizeResponse:
     """Digitaliza factura venezolana desde imagen base64 usando LLM Vision (NIM).
     
-    Requiere autenticación por X-Odoo-Session o X-User-Token (legacy).
+    Requiere autenticación por X-ContaFis-Token o X-User-Token (legacy).
     """
     runtime = _runtime(request)
     service = get_digitize_service(runtime.settings)
@@ -172,7 +172,7 @@ async def digitize(
 async def digitize_batch(
     request: Request,
     digitize_request: DigitizeBatchRequest,
-    user_ctx: UserContext = Depends(get_user_context_from_session),
+    user_ctx: UserContext = Depends(get_user_context_from_token),
 ) -> DigitizeBatchResponse:
     """Digitaliza hasta 20 imágenes en un solo turno (Spec 006, batch).
 
