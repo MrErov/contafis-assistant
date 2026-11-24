@@ -5,9 +5,13 @@ langchain
 langchain-community
 langchain-openai
 langchain-nvidia-ai-endpoints
+langchain-aws
 langgraph
 langsmith
 python-dotenv
+
+# AWS
+boto3
 
 # API
 fastapi
