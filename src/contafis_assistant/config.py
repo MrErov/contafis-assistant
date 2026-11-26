@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     odoo_readonly_attested: bool = False
     app_env: Literal["development", "test", "production"] = "development"
 
+    # Proveedor LLM: "nim" (NVIDIA NIM) o "bedrock" (Amazon Bedrock)
+    llm_provider: Literal["nim", "bedrock"] = "nim"
+    # Región AWS para Bedrock
+    aws_region: str = "us-east-1"
+    # Modelo LLM para Bedrock (formato ARN de modelo Bedrock)
+    bedrock_llm_model: str = "amazon.nova-lite-v1:0"
+
     # LLM y embeddings
     openai_api_key: SecretStr
     openai_base_url: str = "https://integrate.api.nvidia.com/v1"

@@ -18,6 +18,7 @@ from contafis_assistant.api.routes import router
 from contafis_assistant.api.security import API_KEY_HEADER, ApiKeyGuard
 from contafis_assistant.api.user_auth import UserContext
 from contafis_assistant.config import Settings
+from contafis_assistant.llm_factory import get_chat_model
 from contafis_assistant.domain.answer import (
     AnswerComposer,
     AnswerContext,
@@ -783,29 +784,28 @@ class _LazyOpenAIClassifier:
 
     def _structured(self) -> Any:
         if self._structured_model is None:
-            from langchain_openai import ChatOpenAI
-
-            self._structured_model = ChatOpenAI(
-                model=self._settings.classifier_model_id,
-                api_key=self._settings.openai_api_key.get_secret_value(),
-                base_url=self._settings.openai_base_url,
-                timeout=self._settings.llm_timeout_seconds,
-                max_retries=2,
-            ).with_structured_output(ClassificationDraft)
+            base_model = get_chat_model(self._settings, is_classifier=True)
+            self._structured_model = base_model.with_structured_output(ClassificationDraft)
         return self._structured_model
 
     def _json_object_model(self) -> Any:
         if self._json_model is None:
-            from langchain_openai import ChatOpenAI
+            base_model = get_chat_model(self._settings, is_classifier=True)
+            # Para Bedrock, response_format no es soportado de la misma forma;
+            # usamos el modelo base y validamos el JSON en _validate.
+            if self._settings.llm_provider == "bedrock":
+                self._json_model = base_model
+            else:
+                from langchain_openai import ChatOpenAI
 
-            self._json_model = ChatOpenAI(
-                model=self._settings.classifier_model_id,
-                api_key=self._settings.openai_api_key.get_secret_value(),
-                base_url=self._settings.openai_base_url,
-                timeout=self._settings.llm_timeout_seconds,
-                max_retries=2,
-                model_kwargs={"response_format": {"type": "json_object"}},
-            )
+                self._json_model = ChatOpenAI(
+                    model=self._settings.classifier_model_id,
+                    api_key=self._settings.openai_api_key.get_secret_value(),
+                    base_url=self._settings.openai_base_url,
+                    timeout=self._settings.llm_timeout_seconds,
+                    max_retries=2,
+                    model_kwargs={"response_format": {"type": "json_object"}},
+                )
         return self._json_model
 
     def _validate(self, raw: Any) -> ClassificationDraft | None:
@@ -897,16 +897,23 @@ class _LazyOpenAIAnswerComposer:
 
     def _ensure(self) -> Any:
         if self._model is None:
-            from langchain_openai import ChatOpenAI
+            base_model = get_chat_model(self._settings, is_classifier=False)
+            # Para NIM, podemos pasar temperature=0 via model_kwargs
+            # Para Bedrock, temperature se configura en inference_config
+            if self._settings.llm_provider == "nim":
+                from langchain_openai import ChatOpenAI
 
-            self._model = ChatOpenAI(
-                model=self._settings.answer_model_id,
-                api_key=self._settings.openai_api_key.get_secret_value(),
-                base_url=self._settings.openai_base_url,
-                timeout=self._settings.llm_timeout_seconds,
-                max_retries=2,
-                temperature=0,
-            )
+                self._model = ChatOpenAI(
+                    model=self._settings.answer_model_id,
+                    api_key=self._settings.openai_api_key.get_secret_value(),
+                    base_url=self._settings.openai_base_url,
+                    timeout=self._settings.llm_timeout_seconds,
+                    max_retries=2,
+                    temperature=0,
+                )
+            else:
+                # Bedrock: usar el modelo base con temperature=0 en inference_config
+                self._model = base_model.bind(temperature=0)
         return self._model
 
     def __call__(self, context: AnswerContext) -> str:
